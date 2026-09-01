@@ -61,12 +61,11 @@ FT_FunctionWidgetItem *FT_Edit::addSchedule(const QString &title)
     itemWidget->setTitle(title.isEmpty()
                              ? tr("Schedule %1").arg(count() + 1)
                              : title);
-    itemWidget->ensurePolished();
 
     auto *listItem = new QListWidgetItem;
-    listItem->setSizeHint(itemWidget->sizeHint());
     addItem(listItem);
     setItemWidget(listItem, itemWidget);
+    listItem->setSizeHint(itemWidget->sizeHint());
     attachItem(itemWidget, listItem);
 
     rewriteAllItemSizeHints(this);
@@ -80,15 +79,6 @@ FT_FunctionWidgetItem *FT_Edit::addSchedule(const QString &title)
 
 void FT_Edit::attachItem(FT_FunctionWidgetItem *fwItem, QListWidgetItem *listItem)
 {
-    QTimer::singleShot(0, fwItem, [fwItem] {
-        fwItem->setVisible(true);
-        fwItem->show();
-        fwItem->raise();
-        fwItem->ensurePolished();
-        const QList<QWidget *> children = fwItem->findChildren<QWidget *>();
-        for (QWidget *cw : children) { cw->setVisible(true); cw->ensurePolished(); }
-    });
-
     connect(fwItem, &FT_FunctionWidgetItem::sizeHintChanged, this,
             [this, listItem, fwItem] {
                 fwItem->ensurePolished();

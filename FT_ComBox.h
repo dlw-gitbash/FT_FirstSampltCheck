@@ -27,7 +27,6 @@ protected:
     void paintEvent(QPaintEvent *e) override;
     void resizeEvent(QResizeEvent *e) override;
     void changeEvent(QEvent *e) override;
-    void showPopup() override;
 
     void applyMargins() override;
     void ftPaintExtra(QPainter &p, const QRect &area) override;

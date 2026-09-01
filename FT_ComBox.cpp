@@ -6,8 +6,6 @@
 #include <QLineEdit>
 #include <QResizeEvent>
 #include <QEvent>
-#include <QListView>
-#include <QAbstractItemView>
 
 namespace {
 constexpr int kArrowWidth = 24;
@@ -35,7 +33,6 @@ FT_ComBox::FT_ComBox(QWidget *parent)
         "   border: none;"
         "}"
         "FT_ComBox::down-arrow {"
-        "   width: 0px; height: 0px;"
         "   image: none;"
         "}"
         "FT_ComBox QAbstractItemView {"
@@ -46,29 +43,6 @@ FT_ComBox::FT_ComBox(QWidget *parent)
         "   selection-color: #222222;"
         "}"
     ).arg(kArrowWidth));
-
-    QMetaObject::invokeMethod(this, [this] {
-        if (QAbstractItemView *vw = view()) {
-            if (auto *lv = qobject_cast<QListView *>(vw)) {
-                lv->setUniformItemSizes(true);
-                lv->setLayoutMode(QListView::SinglePass);
-                lv->setBatchSize(100);
-            }
-        }
-    }, Qt::QueuedConnection);
-}
-
-void FT_ComBox::showPopup()
-{
-    if (QAbstractItemView *vw = view()) {
-        const int w = qMax(width(), 120);
-        vw->setMinimumWidth(w);
-        if (QWidget *container = vw->parentWidget()) {
-            container->setMinimumWidth(w);
-            container->updateGeometry();
-        }
-    }
-    QComboBox::showPopup();
 }
 
 void FT_ComBox::paintEvent(QPaintEvent *e)
@@ -128,7 +102,7 @@ void FT_ComBox::ftPaintExtra(QPainter &p, const QRect &area)
     const qreal cy = height() / 2.0;
     constexpr qreal halfW = 4.0;
     constexpr qreal triH  = 5.0;
-    const QColor triColor = (underMouse() || (view() && view()->isVisible()))
+    const QColor triColor = underMouse()
                                 ? QColor(0x2f, 0x80, 0xed)
                                 : QColor(0x7a, 0x7a, 0x7a);
     p.setBrush(triColor);

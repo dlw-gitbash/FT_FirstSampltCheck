@@ -58,10 +58,11 @@ FT_FunctionWidgetItem::FT_FunctionWidgetItem(QWidget *parent)
     m_funcLayout->setContentsMargins(0, 0, 0, 0);
     m_funcLayout->setSpacing(kSpacing);
     m_funcLayout->setAlignment(Qt::AlignTop);
+    m_funcContainer->setObjectName(QStringLiteral("FuncContainer"));
     m_funcContainer->setMinimumWidth(kTBoxMinWidth);
     m_funcContainer->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
     m_funcContainer->setStyleSheet(QStringLiteral(
-        "QWidget { border: 1px dashed rgba(220,0,0,0.25); background: rgba(255,255,255,1); }"));
+        "#FuncContainer { border: 1px dashed rgba(220,0,0,0.25); background: rgba(255,255,255,1); }"));
 
     auto *root = new QHBoxLayout(this);
     root->setContentsMargins(kItemHMargin, kItemVMargin, kItemHMargin, kItemVMargin);
@@ -85,7 +86,7 @@ FT_FunctionWidgetItem::FT_FunctionWidgetItem(QWidget *parent)
     connect(m_funcContainer, &QWidget::customContextMenuRequested,
             this, &FT_FunctionWidgetItem::showFunclistMenu);
 
-    addFunction(new FT_TBoxFunctionWidget);
+    QTimer::singleShot(0, this, [this] { addFunction(new FT_TBoxFunctionWidget); });
 }
 
 bool FT_FunctionWidgetItem::scheduleEnabled() const { return m_enableCheck->isChecked(); }
@@ -128,12 +129,9 @@ void FT_FunctionWidgetItem::addFunction(FT_FunctionWidget *fw)
     fw->setParent(m_funcContainer);
     m_functions.append(fw);
     m_funcLayout->addWidget(fw, 0, Qt::AlignTop);
-    fw->ensurePolished();
-    fw->setVisible(true);
-    fw->raise();
 
     fw->setStyleSheet(QStringLiteral(
-        "QWidget { border: 2px dashed rgba(0,170,0,0.45); background: rgba(255,255,255,1); }"));
+        ".FT_FunctionWidget { border: 2px dashed rgba(0,170,0,0.45); background: rgba(255,255,255,1); }"));
 
     hookFunctionSize(fw);
 
