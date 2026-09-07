@@ -4,6 +4,7 @@
 #include <QWidget>
 #include <QTreeWidget>
 #include <QListWidget>
+#include "FT_FunctionConfig.h"
 
 class QTreeWidgetItem;
 class QLabel;
@@ -102,7 +103,7 @@ private:
     void markDirty();
     void markClean();
     bool confirmDiscardIfDirty(const QString& actionTitle);
-    bool payloadHexOk(QString* errorDetail) const;
+    bool payloadHexOk(const FT_FunctionDocument& doc, QString* errorDetail) const;
 
     QWidget*         m_buttonBar     = nullptr;
     FT_FunctionTree* m_funcTree      = nullptr;

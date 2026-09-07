@@ -18,6 +18,7 @@ constexpr int kCardMargin    = 2;
 constexpr int kHeaderSpacing = 6;
 constexpr int kTitleMinH     = 36;
 constexpr int kCardDefaultH  = 48;
+constexpr int kListItemPadV  = 2;
 }
 
 FT_FunctionCard::FT_FunctionCard(QWidget* parent)
@@ -97,7 +98,8 @@ void FT_FunctionCard::setRow(FT_FunctionRow* row)
         return;
     }
 
-    static_cast<QHBoxLayout*>(layout())->addWidget(m_row, 3, Qt::AlignTop);
+    if (auto* hbox = qobject_cast<QHBoxLayout*>(layout()))
+        hbox->addWidget(m_row, 3, Qt::AlignTop);
     connectRow(m_row);
 
     if (!m_loading) {
@@ -136,14 +138,14 @@ void FT_FunctionCard::applyConfig(const FT_FunctionCardConfig& cfg)
         FT_FunctionRow* row = FtFunctionFactory::create(ftRowDataTypeName(cfg.rows.first()));
         if (row) {
             m_row = row;
-            static_cast<QHBoxLayout*>(layout())->addWidget(m_row, 3, Qt::AlignTop);
+            if (auto* hbox = qobject_cast<QHBoxLayout*>(layout()))
+                hbox->addWidget(m_row, 3, Qt::AlignTop);
             connectRow(m_row);
             m_row->applyConfig(cfg.rows.first());
         }
     }
 
     m_loading = false;
-    adjustHeight();
     emit contentChanged();
 
     QTimer::singleShot(0, this, &FT_FunctionCard::adjustHeight);
@@ -188,7 +190,7 @@ void FT_FunctionCard::adjustHeight()
     for (int i = 0; i < outer->count(); ++i) {
         QListWidgetItem* outerItem = outer->item(i);
         if (outer->itemWidget(outerItem) == this) {
-            outerItem->setSizeHint(QSize(0, cardH + 2));
+            outerItem->setSizeHint(QSize(0, cardH + kListItemPadV));
             break;
         }
     }

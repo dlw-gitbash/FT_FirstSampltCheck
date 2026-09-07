@@ -138,12 +138,14 @@ void FHintTextEdit::setAutoGrow(bool on)
 {
     m_autoGrow = on;
     if (on) {
+        setMinimumHeight(m_singleHeight);
         setMaximumHeight(QWIDGETSIZE_MAX);
+        setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
         adjustHeightToContent();
     } else {
         setMinimumHeight(kFHintMinHeight);
         setMaximumHeight(QWIDGETSIZE_MAX);
-        setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Ignored);
+        setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Ignored);
     }
 }
 

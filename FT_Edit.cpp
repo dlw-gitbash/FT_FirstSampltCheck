@@ -181,7 +181,7 @@ void FT_FunctionList::updateDropIndicator(const QPoint& pos)
     if (!m_dropIndicator)
         return;
 
-    const int vw = width();
+    const int vw = viewport()->width();
 
     if (count() == 0) {
         m_dropIndicator->setGeometry(0, 0, vw, m_dropIndicator->height());
@@ -228,8 +228,10 @@ void FT_FunctionList::startDrag(Qt::DropActions supportedActions)
     m_dragSourceRow = currentRow();
 
     QList<QListWidgetItem*> items = selectedItems();
-    if (items.isEmpty())
+    if (items.isEmpty()) {
+        m_dragSourceRow = -1;
         return;
+    }
 
     QWidget* w = itemWidget(items.first());
     if (w && m_dragPreview) {
@@ -239,8 +241,10 @@ void FT_FunctionList::startDrag(Qt::DropActions supportedActions)
     }
 
     QMimeData* mime = mimeData(items);
-    if (!mime)
+    if (!mime) {
+        m_dragSourceRow = -1;
         return;
+    }
 
     QDrag* drag = new QDrag(this);
     drag->setMimeData(mime);
@@ -248,7 +252,9 @@ void FT_FunctionList::startDrag(Qt::DropActions supportedActions)
     tpix.fill(Qt::transparent);
     drag->setPixmap(tpix);
     drag->exec(supportedActions, Qt::MoveAction);
+    delete drag;
 
+    m_dragSourceRow = -1;
     hideDragPreview();
 }
 
@@ -436,21 +442,10 @@ void FT_Edit::buildTree()
 
     m_funcTree->setContextMenuPolicy(Qt::CustomContextMenu);
     connect(m_funcTree, &QWidget::customContextMenuRequested, this, [this](const QPoint& pos) {
-        QTreeWidgetItem* at = m_funcTree->itemAt(pos);
-        const int nodeType = at ? at->data(0, Qt::UserRole).toInt() : 0;
-
         QMenu menu(m_funcTree);
-        QAction* add = nullptr;
-
-        if (nodeType == NodeTboxCommand) {
-            add = menu.addAction(
-                style()->standardIcon(QStyle::SP_FileIcon),
-                tr("Add TBox command"));
-        } else {
-            add = menu.addAction(
-                style()->standardIcon(QStyle::SP_DirIcon),
-                tr("New Function"));
-        }
+        QAction* add = menu.addAction(
+            style()->standardIcon(QStyle::SP_FileIcon),
+            tr("New Function"));
 
         QAction* chosen = menu.exec(m_funcTree->viewport()->mapToGlobal(pos));
         if (chosen == add)
@@ -550,16 +545,8 @@ void FT_Edit::onTreeItemDoubleClicked(QTreeWidgetItem* item, int /*column*/)
 
 void FT_Edit::onTreeNodeDropped(int nodeType, int atRow)
 {
-    switch (nodeType) {
-    case NodeFunctions:
+    if (nodeType == NodeFunctions || nodeType == NodeTboxCommand)
         addCard(atRow);
-        break;
-    case NodeTboxCommand:
-        addCard(atRow);
-        break;
-    default:
-        break;
-    }
 }
 
 void FT_Edit::onCardMoved(int /*fromRow*/, int /*toRow*/)
@@ -575,10 +562,9 @@ void FT_Edit::onEmptyAreaDoubleClicked()
     addCard();
 }
 
-void FT_Edit::onCardEnterPressed(int row)
+void FT_Edit::onCardEnterPressed(int /*row*/)
 {
-    if (cardAtRow(row))
-        addTboxRow();
+    addTboxRow();
 }
 
 FT_FunctionCard* FT_Edit::cardAtRow(int row) const
@@ -731,7 +717,7 @@ bool FT_Edit::exportConfig()
     }
 
     QString hexErr;
-    if (!payloadHexOk(&hexErr)) {
+    if (!payloadHexOk(doc, &hexErr)) {
         QMessageBox::warning(this, tr("Save failed"), hexErr);
         return false;
     }
@@ -855,14 +841,10 @@ bool FT_Edit::confirmDiscardIfDirty(const QString& actionTitle)
     return ret == QMessageBox::Yes;
 }
 
-bool FT_Edit::payloadHexOk(QString* errorDetail) const
+bool FT_Edit::payloadHexOk(const FT_FunctionDocument& doc, QString* errorDetail) const
 {
-    for (int i = 0; i < m_funcList->count(); ++i) {
-        auto* card = qobject_cast<FT_FunctionCard*>(
-            m_funcList->itemWidget(m_funcList->item(i)));
-        if (!card)
-            continue;
-        const FT_FunctionCardConfig cfg = card->toConfig();
+    for (int i = 0; i < doc.size(); ++i) {
+        const FT_FunctionCardConfig& cfg = doc[i];
         for (int r = 0; r < cfg.rows.size(); ++r) {
             if (!std::holds_alternative<FT_TboxConfig>(cfg.rows[r]))
                 continue;
@@ -883,5 +865,9 @@ bool FT_Edit::payloadHexOk(QString* errorDetail) const
 
 void FT_Edit::closeEvent(QCloseEvent* event)
 {
+    if (!confirmDiscardIfDirty(tr("Exit"))) {
+        event->ignore();
+        return;
+    }
     QWidget::closeEvent(event);
 }
