@@ -19,6 +19,8 @@ add_executable(FT_Edit WIN32
     Module/FT_Widget.cpp
     Module/FT_Function.h
     Module/FT_Function.cpp
+    Module/FT_FunctionGroup.h
+    Module/FT_FunctionGroup.cpp
     Module/FT_FunctionItem.h
     Module/FT_FunctionItem.cpp
     Module/FT_FunctionTree.h

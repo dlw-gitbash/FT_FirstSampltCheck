@@ -1,6 +1,7 @@
 #include "FT_Edit.h"
 #include "Module/FT_Function.h"
 #include "Module/FT_FunctionItem.h"
+#include "Module/FT_FunctionGroup.h"
 #include "Module/FT_FunctionList.h"
 #include "Module/FT_FunctionTree.h"
 #include "Module/FT_Project.h"
@@ -35,6 +36,7 @@
 #include <QLineEdit>
 #include <QComboBox>
 #include <QAbstractSpinBox>
+#include <QSet>
 #include <variant>
 
 FT_Edit::FT_Edit(QWidget* parent)
@@ -74,6 +76,8 @@ FT_Edit::FT_Edit(QWidget* parent)
             this, &FT_Edit::onTreeItemDoubleClicked);
     connect(m_funcList, &FT_FunctionList::treeNodeDropped,
             this, &FT_Edit::onTreeNodeDropped);
+    connect(m_funcList, &FT_FunctionList::commandDroppedToGap,
+            this, &FT_Edit::onCommandDroppedToGap);
     connect(m_funcList, &FT_FunctionList::itemMoved,
             this, &FT_Edit::onItemMoved);
     connect(m_funcList, &FT_FunctionList::internalReorderRequested,
@@ -153,20 +157,20 @@ void FT_Edit::buildTree()
         QMenu menu(m_funcTree);
         QAction* addTbox = menu.addAction(
             style()->standardIcon(QStyle::SP_FileIcon),
-            tr("Add TBox Command"));
+            tr("Add to Current Step: TBox Command"));
         QAction* addI2cW = menu.addAction(
             style()->standardIcon(QStyle::SP_FileIcon),
-            tr("Add I2C Write"));
+            tr("Add to Current Step: I2C Write"));
         QAction* addI2cWR = menu.addAction(
             style()->standardIcon(QStyle::SP_FileIcon),
-            tr("Add I2C Write+Read"));
+            tr("Add to Current Step: I2C Write+Read"));
         QAction* chosen = menu.exec(m_funcTree->viewport()->mapToGlobal(pos));
         if (chosen == addTbox)
-            addTboxItem();
+            addCommandToCurrentStep(QString::fromLatin1(kFtTypeTbox));
         else if (chosen == addI2cW)
-            addIicWriteItem();
+            addCommandToCurrentStep(QString::fromLatin1(kFtTypeIicWrite));
         else if (chosen == addI2cWR)
-            addIicWriteReadItem();
+            addCommandToCurrentStep(QString::fromLatin1(kFtTypeIicWriteRead));
     });
 }
 
@@ -209,15 +213,17 @@ void FT_Edit::buildItemList()
 
         QMenu menu(m_funcList);
 
+        // 列表空白区的对象是“Step”:这里的 Add 一律新建独立 Step;
+        // 往已有 Step 内加命令请在命令区右键(组菜单/命令菜单)。
         QAction* addTbox = menu.addAction(
-            style()->standardIcon(QStyle::SP_FileIcon),
-            tr("Add TBox Command"));
+            style()->standardIcon(QStyle::SP_FileDialogNewFolder),
+            tr("New Step with TBox Command"));
         QAction* addI2cW = menu.addAction(
-            style()->standardIcon(QStyle::SP_FileIcon),
-            tr("Add I2C Write"));
+            style()->standardIcon(QStyle::SP_FileDialogNewFolder),
+            tr("New Step with I2C Write"));
         QAction* addI2cWR = menu.addAction(
-            style()->standardIcon(QStyle::SP_FileIcon),
-            tr("Add I2C Write+Read"));
+            style()->standardIcon(QStyle::SP_FileDialogNewFolder),
+            tr("New Step with I2C Write+Read"));
 
         menu.addSeparator();
         QAction* up = menu.addAction(
@@ -289,29 +295,21 @@ void FT_Edit::onTreeItemDoubleClicked(QTreeWidgetItem* item, int /*column*/)
     if (!item)
         return;
 
+    // 树是“命令面板”:双击把命令加入当前选中 Step 的组尾
+    //(没有 Step 时新建);需要新建独立 Step 请用列表空白区菜单或拖拽到行间。
     switch (item->data(0, Qt::UserRole).toInt()) {
     case NodeTboxCommand:
-        addTboxItem();
+        addCommandToCurrentStep(QString::fromLatin1(kFtTypeTbox));
         break;
     case NodeIicWrite:
-        addIicWriteItem();
+        addCommandToCurrentStep(QString::fromLatin1(kFtTypeIicWrite));
         break;
     case NodeIicWriteRead:
-        addIicWriteReadItem();
+        addCommandToCurrentStep(QString::fromLatin1(kFtTypeIicWriteRead));
         break;
     default:
         break;
     }
-}
-
-void FT_Edit::onTreeNodeDropped(int nodeType, int atIndex)
-{
-    if (nodeType == NodeFunctions || nodeType == NodeTboxCommand)
-        addItem(atIndex);
-    else if (nodeType == NodeIicWrite)
-        addIicWriteItem(atIndex);
-    else if (nodeType == NodeIicWriteRead)
-        addIicWriteReadItem(atIndex);
 }
 
 void FT_Edit::onItemMoved(int /*fromIndex*/, int toIndex)
@@ -391,82 +389,321 @@ FT_FunctionItem* FT_Edit::itemAt(int index) const
     return qobject_cast<FT_FunctionItem*>(m_funcList->itemWidget(item));
 }
 
-FT_FunctionItem* FT_Edit::addFunctionItem(FT_Function* func, int atIndex, const QString& statusMessage)
+int FT_Edit::rowOfItem(FT_FunctionItem* item) const
 {
-    auto* funcItem = new FT_FunctionItem();
-    funcItem->setFunction(func);
+    if (!item)
+        return -1;
+    for (int i = 0; i < m_funcList->count(); ++i) {
+        if (m_funcList->itemWidget(m_funcList->item(i)) == item)
+            return i;
+    }
+    return -1;
+}
+
+int FT_Edit::rowOfGroup(FT_FunctionGroup* group) const
+{
+    if (!group)
+        return -1;
+    for (int i = 0; i < m_funcList->count(); ++i) {
+        if (auto* step = itemAt(i); step && step->group() == group)
+            return i;
+    }
+    return -1;
+}
+
+QString FT_Edit::typeNameFromNode(int nodeType) const
+{
+    if (nodeType == NodeFunctions || nodeType == NodeTboxCommand)
+        return QStringLiteral("TBoxCommand");
+    if (nodeType == NodeIicWrite)
+        return QStringLiteral("IicWrite");
+    if (nodeType == NodeIicWriteRead)
+        return QStringLiteral("IicWriteRead");
+    return {};
+}
+
+void FT_Edit::wireStepSignals(FT_FunctionItem* step)
+{
+    connect(step, &FT_FunctionItem::contentChanged, this, [this]() {
+        m_project->markDirty();
+    });
+    connect(step, &FT_FunctionItem::removeRequested, this, [this, step]() {
+        removeItem(step);
+    });
+    connect(step, &FT_FunctionItem::moveUpRequested, this, [this, step]() {
+        moveItemUp(step);
+    });
+    connect(step, &FT_FunctionItem::moveDownRequested, this, [this, step]() {
+        moveItemDown(step);
+    });
+    connect(step, &FT_FunctionItem::insertStepAfterRequested, this, [this, step]() {
+        const int row = rowOfItem(step);
+        if (row >= 0)
+            insertEmptyStepAfter(row);
+    });
+    connect(step, &FT_FunctionItem::mergeWithNextRequested, this, [this, step]() {
+        const int row = rowOfItem(step);
+        if (row >= 0)
+            mergeStepWithNext(row);
+    });
+    connect(step, &FT_FunctionItem::splitStepRequested, this, [this, step](int flat) {
+        const int row = rowOfItem(step);
+        if (row >= 0)
+            splitStepAt(row, flat);
+    });
+
+    FT_FunctionGroup* group = step->group();
+    connect(group, &FT_FunctionGroup::nodeDroppedAt,
+            this, [this, group](int nodeType, int flat, bool hardBreak) {
+        onNodeIntoGroup(group, nodeType, flat, hardBreak);
+    });
+    connect(group, &FT_FunctionGroup::commandDroppedAt,
+            this, [this, group](const QByteArray& payload, int flat, bool hardBreak) {
+        onCommandIntoGroup(group, payload, flat, hardBreak);
+    });
+}
+
+FT_FunctionItem* FT_Edit::createStep(const FT_FunctionItemConfig& cfg, int atIndex)
+{
+    auto* step = new FT_FunctionItem();
 
     auto* item = new QListWidgetItem();
     constexpr int kOuterBorderV = 2;
-    item->setSizeHint(QSize(0, funcItem->sizeHint().height() + kOuterBorderV));
+    item->setSizeHint(QSize(0, step->sizeHint().height() + kOuterBorderV));
 
     if (atIndex < 0 || atIndex >= m_funcList->count()) {
         m_funcList->addItem(item);
+        atIndex = m_funcList->count() - 1;
     } else {
         m_funcList->insertItem(atIndex, item);
     }
-    m_funcList->setItemWidget(item, funcItem);
+    m_funcList->setItemWidget(item, step);
+
+    step->applyConfig(cfg);
+    wireStepSignals(step);
+
+    item->setSizeHint(QSize(0, step->sizeHint().height() + kOuterBorderV));
     m_funcList->setCurrentItem(item);
+    step->adjustHeight();
 
-    funcItem->adjustHeight();
-
-    connect(funcItem, &FT_FunctionItem::contentChanged, this, [this]() {
-        m_project->markDirty();
-    });
-    connect(funcItem, &FT_FunctionItem::removeRequested, this, [this, funcItem]() {
-        removeItem(funcItem);
-    });
-    connect(funcItem, &FT_FunctionItem::moveUpRequested, this, [this, funcItem]() {
-        moveItemUp(funcItem);
-    });
-    connect(funcItem, &FT_FunctionItem::moveDownRequested, this, [this, funcItem]() {
-        moveItemDown(funcItem);
-    });
-
-    m_statusBar->showMessage(statusMessage, 2000);
     updateEmptyHint();
     m_project->markDirty();
-    return funcItem;
+    return step;
 }
 
 FT_FunctionItem* FT_Edit::addItem(int atIndex)
 {
-    FT_Function* func = FtFunctionFactory::create(FtFunctionFactory::defaultTypeName());
-    if (!func) {
-        m_statusBar->showMessage(tr("Failed to create function"), 3000);
-        return nullptr;
+    FT_FunctionItem* step = createStep(FT_FunctionItemConfig{}, atIndex);
+    if (step) {
+        step->group()->appendFunction(FtFunctionFactory::defaultTypeName());
+        m_statusBar->showMessage(tr("New step added"), 2000);
     }
-    return addFunctionItem(func, atIndex, tr("New function added"));
+    return step;
 }
 
 void FT_Edit::addTboxItem(int atIndex)
 {
-    FT_Function* func = FtFunctionFactory::create(QStringLiteral("TBoxCommand"));
-    if (!func) {
-        m_statusBar->showMessage(tr("Failed to create TBox function"), 3000);
-        return;
+    FT_FunctionItem* step = createStep(FT_FunctionItemConfig{}, atIndex);
+    if (step) {
+        step->group()->appendFunction(QStringLiteral("TBoxCommand"));
+        m_statusBar->showMessage(tr("New TBox command added"), 2000);
     }
-    addFunctionItem(func, atIndex, tr("New TBox command added"));
 }
 
 void FT_Edit::addIicWriteItem(int atIndex)
 {
-    FT_Function* func = FtFunctionFactory::create(QStringLiteral("IicWrite"));
-    if (!func) {
-        m_statusBar->showMessage(tr("Failed to create I2C Write function"), 3000);
-        return;
+    FT_FunctionItem* step = createStep(FT_FunctionItemConfig{}, atIndex);
+    if (step) {
+        step->group()->appendFunction(QStringLiteral("IicWrite"));
+        m_statusBar->showMessage(tr("New I2C Write function added"), 2000);
     }
-    addFunctionItem(func, atIndex, tr("New I2C Write function added"));
 }
 
 void FT_Edit::addIicWriteReadItem(int atIndex)
 {
-    FT_Function* func = FtFunctionFactory::create(QStringLiteral("IicWriteRead"));
-    if (!func) {
-        m_statusBar->showMessage(tr("Failed to create I2C Write+Read function"), 3000);
+    FT_FunctionItem* step = createStep(FT_FunctionItemConfig{}, atIndex);
+    if (step) {
+        step->group()->appendFunction(QStringLiteral("IicWriteRead"));
+        m_statusBar->showMessage(tr("New I2C Write+Read function added"), 2000);
+    }
+}
+
+void FT_Edit::addCommandToCurrentStep(const QString& typeName)
+{
+    FT_FunctionItem* step = currentItem();
+    if (!step) {
+        // 还没有任何 Step:直接建一个含该命令的新 Step
+        if (typeName == QLatin1String(kFtTypeTbox))
+            addTboxItem();
+        else if (typeName == QLatin1String(kFtTypeIicWrite))
+            addIicWriteItem();
+        else
+            addIicWriteReadItem();
         return;
     }
-    addFunctionItem(func, atIndex, tr("New I2C Write+Read function added"));
+
+    step->group()->appendFunction(typeName);
+    if (auto* item = m_funcList->currentItem())
+        m_funcList->scrollToItem(item);
+    m_statusBar->showMessage(tr("Command added into step"), 2000);
+}
+
+void FT_Edit::onTreeNodeDropped(int nodeType, int atIndex)
+{
+    const QString typeName = typeNameFromNode(nodeType);
+    if (typeName.isEmpty())
+        return;
+
+    FT_FunctionItem* step = createStep(FT_FunctionItemConfig{}, atIndex);
+    if (step)
+        step->group()->appendFunction(typeName);
+}
+
+void FT_Edit::onNodeIntoGroup(FT_FunctionGroup* dest, int nodeType, int flat, bool hardBreak)
+{
+    if (!dest)
+        return;
+    const QString typeName = typeNameFromNode(nodeType);
+    if (typeName.isEmpty())
+        return;
+    const int index = qBound(0, flat, dest->count());
+    dest->insertFunction(typeName, index, hardBreak);
+    m_statusBar->showMessage(tr("Command added into step"), 1500);
+}
+
+static bool ftParseCommandPayload(const QByteArray& payload, FT_FunctionData& outData)
+{
+    try {
+        const FtJson j = FtJson::parse(std::string(payload.constData(),
+                                                   static_cast<size_t>(payload.size())));
+        outData = ftFunctionDataFromJson(j);
+        return ftFunctionDataTypeName(outData) != QLatin1String("Empty");
+    } catch (const std::exception&) {
+        return false;
+    }
+}
+
+void FT_Edit::onCommandIntoGroup(FT_FunctionGroup* dest, const QByteArray& payload,
+                                 int flat, bool hardBreak)
+{
+    if (!dest)
+        return;
+
+    FT_FunctionData data;
+    if (!ftParseCommandPayload(payload, data)) {
+        m_statusBar->showMessage(tr("Invalid command payload"), 3000);
+        return;
+    }
+
+    int destFlat = qBound(0, flat, dest->count());
+
+    // 唯一的索引归一化在本层完成:先删源,同源时修正目标 flat。
+    const FtCommandDragSourceInfo src = ftCommandDragSource();
+    auto* srcGroup = qobject_cast<FT_FunctionGroup*>(src.group);
+    if (srcGroup && src.flat >= 0 && src.flat < srcGroup->count()) {
+        const int srcFlat = src.flat;
+        srcGroup->removeFunctionAt(srcFlat);
+        if (srcGroup == dest && destFlat > srcFlat)
+            --destFlat;
+        destFlat = qBound(0, destFlat, dest->count());
+    }
+
+    dest->insertConfig(data, destFlat, hardBreak);
+    m_statusBar->showMessage(tr("Command moved"), 1500);
+}
+
+void FT_Edit::onCommandDroppedToGap(const QByteArray& payload, int atIndex)
+{
+    FT_FunctionData data;
+    if (!ftParseCommandPayload(payload, data)) {
+        m_statusBar->showMessage(tr("Invalid command payload"), 3000);
+        return;
+    }
+
+    // 源命令先从原组移除(空 Step 保留),行号不会变化。
+    const FtCommandDragSourceInfo src = ftCommandDragSource();
+    auto* srcGroup = qobject_cast<FT_FunctionGroup*>(src.group);
+    if (srcGroup && src.flat >= 0 && src.flat < srcGroup->count())
+        srcGroup->removeFunctionAt(src.flat);
+
+    FT_FunctionItemConfig cfg;
+    cfg.lines = FT_FunctionLines{QVector<FT_FunctionData>{data}};
+    const int index = qBound(0, atIndex, m_funcList->count());
+    createStep(cfg, index);
+    m_statusBar->showMessage(tr("Command moved to new step"), 1500);
+}
+
+void FT_Edit::splitStepAt(int row, int flat)
+{
+    FT_FunctionItem* step = itemAt(row);
+    if (!step)
+        return;
+
+    const FT_FunctionItemConfig cfg = step->toConfig();
+
+    QVector<FT_FunctionData> all;
+    QSet<int> hardBreaks;
+    for (int li = 0; li < cfg.lines.size(); ++li) {
+        for (int ci = 0; ci < cfg.lines[li].size(); ++ci) {
+            const int f = all.size();
+            if (li > 0 && ci == 0)
+                hardBreaks.insert(f);
+            all.append(cfg.lines[li][ci]);
+        }
+    }
+
+    if (flat <= 0 || flat >= all.size())
+        return;
+
+    FT_FunctionItemConfig head = cfg;
+    head.lines.clear();
+    FT_FunctionItemConfig tail;
+
+    FT_FunctionItemConfig* dst = &head;
+    for (int i = 0; i < all.size(); ++i) {
+        if (i >= flat)
+            dst = &tail;
+        if (i == 0 || i == flat || hardBreaks.contains(i))
+            dst->lines.append(QVector<FT_FunctionData>{});
+        if (dst->lines.isEmpty())
+            dst->lines.append(QVector<FT_FunctionData>{});
+        dst->lines.last().append(all[i]);
+    }
+
+    step->applyConfig(head);
+    createStep(tail, row + 1);
+    m_statusBar->showMessage(tr("Step split at command #%1").arg(flat + 1), 2000);
+}
+
+void FT_Edit::insertEmptyStepAfter(int row)
+{
+    if (row < 0 || row >= m_funcList->count())
+        return;
+    createStep(FT_FunctionItemConfig{}, row + 1);
+    m_statusBar->showMessage(tr("Empty step inserted"), 2000);
+}
+
+void FT_Edit::mergeStepWithNext(int row)
+{
+    if (row < 0 || row + 1 >= m_funcList->count()) {
+        m_statusBar->showMessage(tr("No next step to merge"), 1500);
+        return;
+    }
+
+    FT_FunctionItemConfig merged = itemAt(row)->toConfig();
+    const FT_FunctionItemConfig next = itemAt(row + 1)->toConfig();
+
+    if (merged.lines.isEmpty()) {
+        merged.lines = next.lines;
+    } else if (!next.lines.isEmpty()) {
+        merged.lines.last() += next.lines.first();
+        for (int i = 1; i < next.lines.size(); ++i)
+            merged.lines.append(next.lines[i]);
+    }
+
+    itemAt(row)->applyConfig(merged);
+    removeItem(itemAt(row + 1));
+    m_statusBar->showMessage(tr("Steps merged"), 2000);
 }
 
 FT_FunctionItem* FT_Edit::currentItem() const
@@ -589,12 +826,12 @@ bool FT_Edit::exportConfig()
     FT_FunctionDocument doc = m_project->collectDocument();
 
     QString hexErr;
-    for (int i = 0; i < doc.size(); ++i) {
+    for (int i = 0; i < doc.size() && hexErr.isEmpty(); ++i) {
         const FT_FunctionItemConfig& cfg = doc[i];
         auto checkPayload = [&hexErr, &cfg](const QString& payload, const QString& fieldName) {
             const QStringList tokens = ftSplitWs(payload);
             if (!tokens.isEmpty() && !ftAllHexByteTokens(tokens)) {
-                hexErr = tr("Function \"%1\": %2 must be hex bytes "
+                hexErr = tr("Step \"%1\": %2 must be hex bytes "
                             "separated by spaces (e.g. 22 66).")
                              .arg(cfg.title.isEmpty() ? tr("(untitled)") : cfg.title, fieldName);
                 return false;
@@ -602,21 +839,25 @@ bool FT_Edit::exportConfig()
             return true;
         };
 
-        if (std::holds_alternative<FT_TboxConfig>(cfg.functionData)) {
-            const FT_TboxConfig& tbox = std::get<FT_TboxConfig>(cfg.functionData);
-            if (!checkPayload(tbox.payload, tr("payload")))
-                break;
-        } else if (std::holds_alternative<FT_IicWriteConfig>(cfg.functionData)) {
-            const FT_IicWriteConfig& iw = std::get<FT_IicWriteConfig>(cfg.functionData);
-            if (!checkPayload(iw.reg, tr("reg")))
-                break;
-            if (!checkPayload(iw.payload, tr("payload")))
-                break;
-        } else if (std::holds_alternative<FT_IicWriteReadConfig>(cfg.functionData)) {
-            const FT_IicWriteReadConfig& iwr = std::get<FT_IicWriteReadConfig>(cfg.functionData);
-            if (!checkPayload(iwr.reg, tr("reg")))
-                break;
-            if (!checkPayload(iwr.payload, tr("payload")))
+        for (const QVector<FT_FunctionData>& line : cfg.lines) {
+            for (const FT_FunctionData& data : line) {
+                if (std::holds_alternative<FT_TboxConfig>(data)) {
+                    const FT_TboxConfig& tbox = std::get<FT_TboxConfig>(data);
+                    if (!checkPayload(tbox.payload, tr("payload")))
+                        break;
+                } else if (std::holds_alternative<FT_IicWriteConfig>(data)) {
+                    const FT_IicWriteConfig& iw = std::get<FT_IicWriteConfig>(data);
+                    if (!checkPayload(iw.reg, tr("reg")) ||
+                        !checkPayload(iw.payload, tr("payload")))
+                        break;
+                } else if (std::holds_alternative<FT_IicWriteReadConfig>(data)) {
+                    const FT_IicWriteReadConfig& iwr = std::get<FT_IicWriteReadConfig>(data);
+                    if (!checkPayload(iwr.reg, tr("reg")) ||
+                        !checkPayload(iwr.payload, tr("payload")))
+                        break;
+                }
+            }
+            if (!hexErr.isEmpty())
                 break;
         }
     }
@@ -669,14 +910,20 @@ void FT_Edit::importConfig()
     if (path.isEmpty())
         return;
 
-    if (!m_project->importFromFile(path)) {
+    FT_FunctionDocument doc;
+    if (!m_project->importFromFile(path, doc)) {
         QMessageBox::warning(this, tr("Load failed"), m_project->lastError());
         return;
     }
 
-    FT_FunctionDocument doc = m_project->collectDocument();
+    // 统一走 createStep 重建,保证导入的行与新建行拥有完全一致的信号挂接。
+    clearAllItems();
+    for (const FT_FunctionItemConfig& cfg : doc)
+        createStep(cfg, -1);
+    m_project->markClean();
+
     m_statusBar->showMessage(
-        tr("Loaded %1 function(s)").arg(doc.size()), 5000);
+        tr("Loaded %1 step(s)").arg(doc.size()), 5000);
 }
 
 void FT_Edit::closeEvent(QCloseEvent* event)

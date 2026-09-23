@@ -169,25 +169,69 @@ FT_FunctionData ftFunctionDataFromJson(const FtJson& j)
     return std::monostate{};
 }
 
+FtJson ftLinesToJson(const FT_FunctionLines& lines)
+{
+    FtJson arr = FtJson::array();
+    for (const QVector<FT_FunctionData>& line : lines) {
+        FtJson lineArr = FtJson::array();
+        for (const FT_FunctionData& fn : line)
+            lineArr.push_back(ftFunctionDataToJson(fn));
+        arr.push_back(std::move(lineArr));
+    }
+    return arr;
+}
+
+FT_FunctionLines ftLinesFromJson(const FtJson& j)
+{
+    FT_FunctionLines lines;
+    if (!j.is_array())
+        return lines;
+
+    for (const FtJson& lineJson : j) {
+        if (!lineJson.is_array())
+            continue;
+        QVector<FT_FunctionData> line;
+        for (const FtJson& fnJson : lineJson) {
+            if (!fnJson.is_object())
+                continue;
+            FT_FunctionData data = ftFunctionDataFromJson(fnJson);
+            if (ftFunctionDataTypeName(data) != QLatin1String("Empty"))
+                line.append(std::move(data));
+        }
+        lines.append(std::move(line));
+    }
+    return lines;
+}
+
 FtJson ftItemToJson(const FT_FunctionItemConfig& config)
 {
     FtJson j;
-    j["enabled"]  = config.enabled;
-    j["title"]    = config.title.toStdString();
-    j["delayMs"]  = config.delayMs;
-    j["function"] = ftFunctionDataToJson(config.functionData);
+    j["enabled"] = config.enabled;
+    j["title"]   = config.title.toStdString();
+    j["delayMs"] = config.delayMs;
+    j["lines"]   = ftLinesToJson(config.lines);
     return j;
 }
 
 FT_FunctionItemConfig ftItemFromJson(const FtJson& j)
 {
     FT_FunctionItemConfig cfg;
-    cfg.enabled  = ftBoolField(j, "enabled", true);
-    cfg.title    = ftStrField(j, "title");
-    cfg.delayMs  = ftIntField(j, "delayMs", 1000);
-    auto funcIt  = j.find("function");
-    if (funcIt != j.end() && funcIt->is_object())
-        cfg.functionData = ftFunctionDataFromJson(*funcIt);
+    cfg.enabled = ftBoolField(j, "enabled", true);
+    cfg.title   = ftStrField(j, "title");
+    cfg.delayMs = ftIntField(j, "delayMs", 1000);
+
+    auto linesIt = j.find("lines");
+    if (linesIt != j.end() && linesIt->is_array()) {
+        cfg.lines = ftLinesFromJson(*linesIt);
+    } else {
+        // 兼容 v1:item 只有单个 "function" 对象 → 单行单命令
+        auto funcIt = j.find("function");
+        if (funcIt != j.end() && funcIt->is_object()) {
+            FT_FunctionData data = ftFunctionDataFromJson(*funcIt);
+            if (ftFunctionDataTypeName(data) != QLatin1String("Empty"))
+                cfg.lines = FT_FunctionLines{QVector<FT_FunctionData>{std::move(data)}};
+        }
+    }
     return cfg;
 }
 

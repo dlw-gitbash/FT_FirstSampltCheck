@@ -11,7 +11,12 @@
 // 职责：所有数据结构、枚举、文档类型定义
 // =====================================================
 
-constexpr int kFtConfigVersion = 1;
+constexpr int kFtConfigVersion = 2;
+
+// 命令工厂类型名(FtFunctionFactory::create / 菜单 / 拖拽 MIME 等共用)
+inline constexpr const char kFtTypeTbox[]         = "TBoxCommand";
+inline constexpr const char kFtTypeIicWrite[]     = "IicWrite";
+inline constexpr const char kFtTypeIicWriteRead[] = "IicWriteRead";
 
 enum class FtResultMode
 {
@@ -65,12 +70,17 @@ struct FT_IicWriteReadConfig
 
 using FT_FunctionData = std::variant<std::monostate, FT_TboxConfig, FT_IicWriteConfig, FT_IicWriteReadConfig>;
 
+// 一个 Step(FT_FunctionItem)内的命令分组:
+// 每个内层 QVector 代表一条“硬换行”行(右键/拖拽强制断点);
+// 同一硬行内的多条命令在宽度不足时仍会自动软折行显示。
+using FT_FunctionLines = QVector<QVector<FT_FunctionData>>;
+
 struct FT_FunctionItemConfig
 {
     bool     enabled = true;
     QString  title;
-    FT_FunctionData functionData;
     int      delayMs = 1000;
+    FT_FunctionLines lines;
 };
 
 using FT_FunctionDocument = QVector<FT_FunctionItemConfig>;

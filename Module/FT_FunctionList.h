@@ -2,6 +2,7 @@
 #define FT_FUNCTIONLIST_H
 
 #include <QListWidget>
+#include <QByteArray>
 
 class QLabel;
 
@@ -22,6 +23,7 @@ public:
 
 signals:
     void treeNodeDropped(int nodeType, int atIndex);
+    void commandDroppedToGap(const QByteArray& payload, int atIndex);
     void itemMoved(int fromIndex, int toIndex);
     void internalReorderRequested(int from, int to);
     void emptyAreaDoubleClicked();

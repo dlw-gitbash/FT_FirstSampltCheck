@@ -17,7 +17,7 @@ public:
 
     FT_FunctionDocument collectDocument() const;
     bool exportToFile(const QString& path);
-    bool importFromFile(const QString& path);
+    bool importFromFile(const QString& path, FT_FunctionDocument& outDoc);
 
     QString lastError() const { return m_lastError; }
 

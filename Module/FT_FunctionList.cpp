@@ -1,4 +1,5 @@
 #include "FT_FunctionList.h"
+#include "FT_FunctionGroup.h"
 
 #include <QLabel>
 #include <QMimeData>
@@ -13,8 +14,6 @@
 #include <QPaintEvent>
 #include <QDrag>
 #include <QPixmap>
-
-static const QString kFtNodeMime = QStringLiteral("application/x-ft-node");
 
 FtDropIndicator::FtDropIndicator(QWidget* parent)
     : QWidget(parent)
@@ -188,7 +187,8 @@ void FT_FunctionList::dragEnterEvent(QDragEnterEvent* event)
 {
     const QMimeData* md = event->mimeData();
     const QPoint pos = event->position().toPoint();
-    if (md->hasFormat(kFtNodeMime)) {
+    if (md->hasFormat(QLatin1String(kFtNodeMime)) ||
+        md->hasFormat(QLatin1String(kFtCommandMime))) {
         updateDropIndicator(pos);
         event->acceptProposedAction();
         return;
@@ -200,7 +200,14 @@ void FT_FunctionList::dragEnterEvent(QDragEnterEvent* event)
 
 void FT_FunctionList::dragMoveEvent(QDragMoveEvent* event)
 {
+    const QMimeData* md = event->mimeData();
     const QPoint pos = event->position().toPoint();
+    if (md->hasFormat(QLatin1String(kFtNodeMime)) ||
+        md->hasFormat(QLatin1String(kFtCommandMime))) {
+        updateDropIndicator(pos);
+        event->acceptProposedAction();
+        return;
+    }
     updateDropIndicator(pos);
     updateDragPreview(pos);
     QListWidget::dragMoveEvent(event);
@@ -221,9 +228,17 @@ void FT_FunctionList::dropEvent(QDropEvent* event)
 
     const QMimeData* md = event->mimeData();
 
-    if (md->hasFormat(kFtNodeMime)) {
-        const int nodeType = md->data(kFtNodeMime).toInt();
+    if (md->hasFormat(QLatin1String(kFtNodeMime))) {
+        const int nodeType = md->data(QLatin1String(kFtNodeMime)).toInt();
         emit treeNodeDropped(nodeType, toRow);
+        event->acceptProposedAction();
+        m_dragSourceRow = -1;
+        return;
+    }
+
+    if (md->hasFormat(QLatin1String(kFtCommandMime))) {
+        const QByteArray payload = md->data(QLatin1String(kFtCommandMime));
+        emit commandDroppedToGap(payload, toRow);
         event->acceptProposedAction();
         m_dragSourceRow = -1;
         return;

@@ -41,6 +41,147 @@ FT_Function::FT_Function(QWidget* parent)
 
 FT_Function::~FT_Function() = default;
 
+int FT_Function::packMinimumWidth() const
+{
+    int w = 0;
+    int n = 0;
+    for (int i = 0; i < m_functionLayout->count(); ++i) {
+        QWidget* cw = m_functionLayout->itemAt(i)->widget();
+        if (!cw)
+            continue;
+        int cwMin = qMax(cw->minimumSize().width(), cw->minimumSizeHint().width());
+        // 固定宽度控件的 minimumSizeHint 可能大于其 fixed 宽度,
+        // 打包最小值必须受 maximumSize 约束,否则 min > max 会让换行判定失效。
+        const int cwMax = cw->maximumSize().width();
+        if (cwMax < QWIDGETSIZE_MAX)
+            cwMin = qMin(cwMin, cwMax);
+        w += cwMin;
+        ++n;
+    }
+    const QMargins mg = m_functionLayout->contentsMargins();
+    w += qMax(0, n - 1) * m_functionLayout->spacing();
+    w += mg.left() + mg.right();
+    return qMax(w, 1);
+}
+
+QSize FT_Function::sizeHint() const
+{
+    int inner = kFHintMinHeight;
+    for (int i = 0; i < m_functionLayout->count(); ++i) {
+        QWidget* cw = m_functionLayout->itemAt(i)->widget();
+        if (!cw)
+            continue;
+        inner = qMax(inner, qMax(cw->minimumHeight(), cw->minimumSizeHint().height()));
+    }
+    const QMargins mg = m_functionLayout->contentsMargins();
+    const int h = qMax(kFunctionDefaultHeight, inner + mg.top() + mg.bottom());
+    return QSize(packMinimumWidth(), h);
+}
+
+QSize FT_Function::minimumSizeHint() const
+{
+    return sizeHint();
+}
+
+void FT_Function::updateFunctionHeight()
+{
+    const int h = sizeHint().height();
+    if (h != minimumHeight()) {
+        setMinimumHeight(h);
+        updateGeometry();
+        emit requestResize();
+    }
+}
+
+void FT_Function::installCommandMenuFilters()
+{
+    installEventFilter(this);
+    const QList<QWidget*> kids = findChildren<QWidget*>();
+    for (QWidget* w : kids)
+        w->installEventFilter(this);
+}
+
+bool FT_Function::eventFilter(QObject* watched, QEvent* event)
+{
+    if (event->type() == QEvent::ContextMenu) {
+        // 文本/行输入控件保留系统原生右键菜单(复制、粘贴等)
+        if (qobject_cast<QTextEdit*>(watched) || qobject_cast<QLineEdit*>(watched))
+            return QWidget::eventFilter(watched, event);
+        auto* ce = static_cast<QContextMenuEvent*>(event);
+        showCommandMenu(ce->globalPos());
+        return true;
+    }
+    return QWidget::eventFilter(watched, event);
+}
+
+void FT_Function::contextMenuEvent(QContextMenuEvent* event)
+{
+    showCommandMenu(event->globalPos());
+}
+
+void FT_Function::showCommandMenu(const QPoint& globalPos)
+{
+    QMenu menu(this);
+
+    // 命令区填满组后没有空白可右键,插入入口也放在命令菜单里:
+    // 新命令插到本命令之后、同一视觉行(放不下会自动软折行)。
+    QMenu* insertMenu = menu.addMenu(
+        style()->standardIcon(QStyle::SP_FileIcon),
+        tr("Insert Command After"));
+    QAction* insTbox  = insertMenu->addAction(tr("TBox Command"));
+    QAction* insIicW  = insertMenu->addAction(tr("I2C Write"));
+    QAction* insIicWR = insertMenu->addAction(tr("I2C Write+Read"));
+    menu.addSeparator();
+
+    QAction* advance = menu.addAction(
+        style()->standardIcon(QStyle::SP_FileDialogDetailedView),
+        tr("Response Advance..."));
+    menu.addSeparator();
+    QAction* wrap = menu.addAction(tr("Wrap to New Line"));
+    QAction* unwrap = menu.addAction(tr("Join Previous Line"));
+    QAction* split = menu.addAction(tr("Split into New Step"));
+    wrap->setEnabled(m_menuState.canWrap);
+    unwrap->setEnabled(m_menuState.canUnwrap);
+    split->setEnabled(m_menuState.canSplitStep);
+    menu.addSeparator();
+    QAction* up = menu.addAction(
+        style()->standardIcon(QStyle::SP_ArrowUp),
+        tr("Move Up"));
+    QAction* down = menu.addAction(
+        style()->standardIcon(QStyle::SP_ArrowDown),
+        tr("Move Down"));
+    up->setEnabled(m_menuState.canMoveUp);
+    down->setEnabled(m_menuState.canMoveDown);
+    menu.addSeparator();
+    QAction* del = menu.addAction(
+        style()->standardIcon(QStyle::SP_TrashIcon),
+        tr("Remove"));
+
+    QAction* chosen = menu.exec(globalPos);
+    if (!chosen)
+        return;
+    if (chosen == insTbox)
+        emit requestInsertAfter(QString::fromLatin1(kFtTypeTbox));
+    else if (chosen == insIicW)
+        emit requestInsertAfter(QString::fromLatin1(kFtTypeIicWrite));
+    else if (chosen == insIicWR)
+        emit requestInsertAfter(QString::fromLatin1(kFtTypeIicWriteRead));
+    else if (chosen == advance)
+        openResponseAdvance();
+    else if (chosen == wrap)
+        emit requestWrap();
+    else if (chosen == unwrap)
+        emit requestUnwrap();
+    else if (chosen == split)
+        emit requestSplitNewStep();
+    else if (chosen == up)
+        emit requestMoveUp();
+    else if (chosen == down)
+        emit requestMoveDown();
+    else if (chosen == del)
+        emit requestRemove();
+}
+
 FT_Function* FtFunctionFactory::create(const QString& typeName)
 {
     if (typeName == QLatin1String("TBoxCommand"))
@@ -335,43 +476,10 @@ FT_TboxFunction::FT_TboxFunction(QWidget* parent)
         updateFunctionHeight();
     });
 
-    installEventFilter(this);
-    const QList<QWidget*> kids = findChildren<QWidget*>();
-    for (QWidget* w : kids) {
-        if (qobject_cast<FHintTextEdit*>(w))
-            continue;
-        w->installEventFilter(this);
-    }
+    installCommandMenuFilters();
 
     updateAdvanceLabel();
     updateFunctionHeight();
-}
-
-QSize FT_TboxFunction::sizeHint() const
-{
-    int inner = kFHintMinHeight;
-    auto bumpMin = [&inner](const QWidget* w) {
-        if (w)
-            inner = qMax(inner, w->minimumHeight());
-    };
-    bumpMin(m_combo);
-    bumpMin(m_payload);
-
-    const int margin = layout()
-                           ? layout()->contentsMargins().top() + layout()->contentsMargins().bottom()
-                           : 0;
-    const int h = qMax(kFunctionDefaultHeight, inner + margin);
-    return QSize(0, h);
-}
-
-void FT_TboxFunction::updateFunctionHeight()
-{
-    const int h = sizeHint().height();
-    if (h != minimumHeight()) {
-        setMinimumHeight(h);
-        updateGeometry();
-        emit requestResize();
-    }
 }
 
 FT_FunctionData FT_TboxFunction::toConfig() const
@@ -417,53 +525,6 @@ QString FT_TboxFunction::resultModeText(FtResultMode mode)
 void FT_TboxFunction::updateAdvanceLabel()
 {
     m_advance->setText(resultModeText(m_advanceCfg.toResult));
-}
-
-void FT_TboxFunction::contextMenuEvent(QContextMenuEvent* event)
-{
-    showFunctionContextMenu(event->globalPos());
-}
-
-bool FT_TboxFunction::eventFilter(QObject* watched, QEvent* event)
-{
-    if (event->type() == QEvent::ContextMenu) {
-        if (qobject_cast<FHintTextEdit*>(watched))
-            return FT_Function::eventFilter(watched, event);
-        auto* ce = static_cast<QContextMenuEvent*>(event);
-        showFunctionContextMenu(ce->globalPos());
-        return true;
-    }
-    return FT_Function::eventFilter(watched, event);
-}
-
-void FT_TboxFunction::showFunctionContextMenu(const QPoint& globalPos)
-{
-    QMenu menu(this);
-    QAction* advance = menu.addAction(
-        style()->standardIcon(QStyle::SP_FileDialogDetailedView),
-        tr("Response Advance..."));
-    menu.addSeparator();
-    QAction* up = menu.addAction(
-        style()->standardIcon(QStyle::SP_ArrowUp),
-        tr("Move Up"));
-    QAction* down = menu.addAction(
-        style()->standardIcon(QStyle::SP_ArrowDown),
-        tr("Move Down"));
-    menu.addSeparator();
-    QAction* del = menu.addAction(
-        style()->standardIcon(QStyle::SP_TrashIcon),
-        tr("Remove"));
-
-    QAction* chosen = menu.exec(globalPos);
-    if (chosen == advance) {
-        openResponseAdvance();
-    } else if (chosen == up) {
-        emit requestMoveUp();
-    } else if (chosen == down) {
-        emit requestMoveDown();
-    } else if (chosen == del) {
-        emit requestRemove();
-    }
 }
 
 void FT_TboxFunction::openResponseAdvance()
@@ -529,44 +590,10 @@ FT_IicWriteFunction::FT_IicWriteFunction(QWidget* parent)
     connect(m_reg,     &FHintTextEdit::heightChanged, this, [this](int) { updateFunctionHeight(); });
     connect(m_payload, &FHintTextEdit::heightChanged, this, [this](int) { updateFunctionHeight(); });
 
-    installEventFilter(this);
-    const QList<QWidget*> kids = findChildren<QWidget*>();
-    for (QWidget* w : kids) {
-        if (qobject_cast<FHintTextEdit*>(w))
-            continue;
-        w->installEventFilter(this);
-    }
+    installCommandMenuFilters();
 
     updateAdvanceLabel();
     updateFunctionHeight();
-}
-
-QSize FT_IicWriteFunction::sizeHint() const
-{
-    int inner = kFHintMinHeight;
-    auto bumpMin = [&inner](const QWidget* w) {
-        if (w)
-            inner = qMax(inner, w->minimumHeight());
-    };
-    bumpMin(m_port);
-    bumpMin(m_reg);
-    bumpMin(m_payload);
-
-    const int margin = layout()
-                           ? layout()->contentsMargins().top() + layout()->contentsMargins().bottom()
-                           : 0;
-    const int h = qMax(kFunctionDefaultHeight, inner + margin);
-    return QSize(0, h);
-}
-
-void FT_IicWriteFunction::updateFunctionHeight()
-{
-    const int h = sizeHint().height();
-    if (h != minimumHeight()) {
-        setMinimumHeight(h);
-        updateGeometry();
-        emit requestResize();
-    }
 }
 
 FT_FunctionData FT_IicWriteFunction::toConfig() const
@@ -606,53 +633,6 @@ QString FT_IicWriteFunction::resultModeText(FtResultMode mode)
 void FT_IicWriteFunction::updateAdvanceLabel()
 {
     m_advance->setText(resultModeText(m_advanceCfg.toResult));
-}
-
-void FT_IicWriteFunction::contextMenuEvent(QContextMenuEvent* event)
-{
-    showFunctionContextMenu(event->globalPos());
-}
-
-bool FT_IicWriteFunction::eventFilter(QObject* watched, QEvent* event)
-{
-    if (event->type() == QEvent::ContextMenu) {
-        if (qobject_cast<FHintTextEdit*>(watched))
-            return FT_Function::eventFilter(watched, event);
-        auto* ce = static_cast<QContextMenuEvent*>(event);
-        showFunctionContextMenu(ce->globalPos());
-        return true;
-    }
-    return FT_Function::eventFilter(watched, event);
-}
-
-void FT_IicWriteFunction::showFunctionContextMenu(const QPoint& globalPos)
-{
-    QMenu menu(this);
-    QAction* advance = menu.addAction(
-        style()->standardIcon(QStyle::SP_FileDialogDetailedView),
-        tr("Response Advance..."));
-    menu.addSeparator();
-    QAction* up = menu.addAction(
-        style()->standardIcon(QStyle::SP_ArrowUp),
-        tr("Move Up"));
-    QAction* down = menu.addAction(
-        style()->standardIcon(QStyle::SP_ArrowDown),
-        tr("Move Down"));
-    menu.addSeparator();
-    QAction* del = menu.addAction(
-        style()->standardIcon(QStyle::SP_TrashIcon),
-        tr("Remove"));
-
-    QAction* chosen = menu.exec(globalPos);
-    if (chosen == advance) {
-        openResponseAdvance();
-    } else if (chosen == up) {
-        emit requestMoveUp();
-    } else if (chosen == down) {
-        emit requestMoveDown();
-    } else if (chosen == del) {
-        emit requestRemove();
-    }
 }
 
 void FT_IicWriteFunction::openResponseAdvance()
@@ -727,45 +707,10 @@ FT_IicWriteReadFunction::FT_IicWriteReadFunction(QWidget* parent)
     connect(m_reg,        &FHintTextEdit::heightChanged, this, [this](int) { updateFunctionHeight(); });
     connect(m_payload,    &FHintTextEdit::heightChanged, this, [this](int) { updateFunctionHeight(); });
 
-    installEventFilter(this);
-    const QList<QWidget*> kids = findChildren<QWidget*>();
-    for (QWidget* w : kids) {
-        if (qobject_cast<FHintTextEdit*>(w))
-            continue;
-        w->installEventFilter(this);
-    }
+    installCommandMenuFilters();
 
     updateAdvanceLabel();
     updateFunctionHeight();
-}
-
-QSize FT_IicWriteReadFunction::sizeHint() const
-{
-    int inner = kFHintMinHeight;
-    auto bumpMin = [&inner](const QWidget* w) {
-        if (w)
-            inner = qMax(inner, w->minimumHeight());
-    };
-    bumpMin(m_port);
-    bumpMin(m_reg);
-    bumpMin(m_payload);
-    bumpMin(m_readLength);
-
-    const int margin = layout()
-                           ? layout()->contentsMargins().top() + layout()->contentsMargins().bottom()
-                           : 0;
-    const int h = qMax(kFunctionDefaultHeight, inner + margin);
-    return QSize(0, h);
-}
-
-void FT_IicWriteReadFunction::updateFunctionHeight()
-{
-    const int h = sizeHint().height();
-    if (h != minimumHeight()) {
-        setMinimumHeight(h);
-        updateGeometry();
-        emit requestResize();
-    }
 }
 
 FT_FunctionData FT_IicWriteReadFunction::toConfig() const
@@ -807,53 +752,6 @@ QString FT_IicWriteReadFunction::resultModeText(FtResultMode mode)
 void FT_IicWriteReadFunction::updateAdvanceLabel()
 {
     m_advance->setText(resultModeText(m_advanceCfg.toResult));
-}
-
-void FT_IicWriteReadFunction::contextMenuEvent(QContextMenuEvent* event)
-{
-    showFunctionContextMenu(event->globalPos());
-}
-
-bool FT_IicWriteReadFunction::eventFilter(QObject* watched, QEvent* event)
-{
-    if (event->type() == QEvent::ContextMenu) {
-        if (qobject_cast<FHintTextEdit*>(watched))
-            return FT_Function::eventFilter(watched, event);
-        auto* ce = static_cast<QContextMenuEvent*>(event);
-        showFunctionContextMenu(ce->globalPos());
-        return true;
-    }
-    return FT_Function::eventFilter(watched, event);
-}
-
-void FT_IicWriteReadFunction::showFunctionContextMenu(const QPoint& globalPos)
-{
-    QMenu menu(this);
-    QAction* advance = menu.addAction(
-        style()->standardIcon(QStyle::SP_FileDialogDetailedView),
-        tr("Response Advance..."));
-    menu.addSeparator();
-    QAction* up = menu.addAction(
-        style()->standardIcon(QStyle::SP_ArrowUp),
-        tr("Move Up"));
-    QAction* down = menu.addAction(
-        style()->standardIcon(QStyle::SP_ArrowDown),
-        tr("Move Down"));
-    menu.addSeparator();
-    QAction* del = menu.addAction(
-        style()->standardIcon(QStyle::SP_TrashIcon),
-        tr("Remove"));
-
-    QAction* chosen = menu.exec(globalPos);
-    if (chosen == advance) {
-        openResponseAdvance();
-    } else if (chosen == up) {
-        emit requestMoveUp();
-    } else if (chosen == down) {
-        emit requestMoveDown();
-    } else if (chosen == del) {
-        emit requestRemove();
-    }
 }
 
 void FT_IicWriteReadFunction::openResponseAdvance()

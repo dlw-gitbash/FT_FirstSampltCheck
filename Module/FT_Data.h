@@ -20,6 +20,9 @@ QString ftFunctionDataTypeName(const FT_FunctionData& data);
 FtJson ftFunctionDataToJson(const FT_FunctionData& data);
 FT_FunctionData ftFunctionDataFromJson(const FtJson& j);
 
+FtJson ftLinesToJson(const FT_FunctionLines& lines);
+FT_FunctionLines ftLinesFromJson(const FtJson& j);
+
 FtJson ftItemToJson(const FT_FunctionItemConfig& config);
 FT_FunctionItemConfig ftItemFromJson(const FtJson& j);
 

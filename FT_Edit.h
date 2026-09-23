@@ -2,16 +2,20 @@
 #define FT_EDIT_H
 
 #include <QWidget>
+#include <QString>
 
 class QTreeWidgetItem;
 class QLabel;
 class QStatusBar;
 class QCloseEvent;
 class FT_FunctionItem;
+class FT_FunctionGroup;
 class FT_FunctionTree;
 class FT_FunctionList;
 class FT_Function;
 class FT_Project;
+struct FT_FunctionItemConfig;
+class QByteArray;
 
 class FT_Edit : public QWidget
 {
@@ -23,10 +27,14 @@ public:
     void addTboxItem(int atIndex = -1);
     void addIicWriteItem(int atIndex = -1);
     void addIicWriteReadItem(int atIndex = -1);
+    // 把一条命令追加到当前选中 Step 的命令组末尾;
+    // 没有任何 Step 时退化为新建一个含该命令的 Step。
+    void addCommandToCurrentStep(const QString& typeName);
 
 private slots:
     void onTreeItemDoubleClicked(QTreeWidgetItem* item, int column);
     void onTreeNodeDropped(int nodeType, int atIndex);
+    void onCommandDroppedToGap(const QByteArray& payload, int atIndex);
     void onItemMoved(int fromIndex, int toIndex);
     void onInternalReorder(int from, int to);
     void onEmptyAreaDoubleClicked();
@@ -47,8 +55,20 @@ private:
 
     FT_FunctionItem* currentItem() const;
     FT_FunctionItem* itemAt(int index) const;
+    int rowOfItem(FT_FunctionItem* item) const;
+    int rowOfGroup(FT_FunctionGroup* group) const;
 
-    FT_FunctionItem* addFunctionItem(FT_Function* func, int atIndex, const QString& statusMessage);
+    // 新建一个 Step 行并插入到 atIndex(0..count(),-1=末尾),完成全部信号挂接。
+    FT_FunctionItem* createStep(const FT_FunctionItemConfig& cfg, int atIndex);
+    void wireStepSignals(FT_FunctionItem* step);
+    QString typeNameFromNode(int nodeType) const;
+    void onNodeIntoGroup(FT_FunctionGroup* dest, int nodeType, int flat, bool hardBreak);
+    void onCommandIntoGroup(FT_FunctionGroup* dest, const QByteArray& payload,
+                            int flat, bool hardBreak);
+    void splitStepAt(int row, int flat);
+    void insertEmptyStepAfter(int row);
+    void mergeStepWithNext(int row);
+
     void removeItem(FT_FunctionItem* item);
     void deleteCurrentItem();
     void moveCurrentItem(int delta);

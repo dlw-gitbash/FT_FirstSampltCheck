@@ -8,7 +8,7 @@
 class QCheckBox;
 class FHintTextEdit;
 class FHintSpinBox;
-class FT_Function;
+class FT_FunctionGroup;
 
 class FT_FunctionItem : public QWidget
 {
@@ -16,8 +16,7 @@ class FT_FunctionItem : public QWidget
 public:
     explicit FT_FunctionItem(QWidget* parent = nullptr);
 
-    void setFunction(FT_Function* function);
-    FT_Function* function() const { return m_function; }
+    FT_FunctionGroup* group() const { return m_group; }
 
     FT_FunctionItemConfig toConfig() const;
     void applyConfig(const FT_FunctionItemConfig& cfg);
@@ -34,18 +33,19 @@ signals:
     void removeRequested();
     void moveUpRequested();
     void moveDownRequested();
+    void insertStepAfterRequested();
+    void mergeWithNextRequested();
+    void splitStepRequested(int flat);
 
 private:
-    void connectFunction(FT_Function* function);
-
-    QCheckBox*     m_enableCheck  = nullptr;
-    FHintTextEdit* m_titleEdit    = nullptr;
-    FT_Function*   m_function     = nullptr;
-    FHintSpinBox*  m_delaySpin    = nullptr;
-    int            m_cachedHeight  = 0;
-    bool           m_loading       = false;
-    bool           m_adjusting     = false;
-    bool           m_pendingAdjust = false;
+    QCheckBox*          m_enableCheck  = nullptr;
+    FHintTextEdit*      m_titleEdit    = nullptr;
+    FT_FunctionGroup*   m_group        = nullptr;
+    FHintSpinBox*       m_delaySpin    = nullptr;
+    int                 m_cachedHeight  = 0;
+    bool                m_loading       = false;
+    bool                m_adjusting     = false;
+    bool                m_pendingAdjust = false;
 };
 
 #endif // FT_FUNCTIONITEM_H
