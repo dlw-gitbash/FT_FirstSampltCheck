@@ -1,6 +1,6 @@
 #include "LogTableView.h"
 #include "LogToolBar.h"
-#include "core/LogHighlighter.h"
+#include "LogHighlighter.h"
 #include <QVBoxLayout>
 #include <QHeaderView>
 #include <QScrollBar>

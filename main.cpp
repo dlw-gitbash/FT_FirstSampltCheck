@@ -6,8 +6,8 @@ int main(int argc, char* argv[])
     QApplication app(argc, argv);
     app.setApplicationName(QStringLiteral("FT_Edit"));
 
-    FT_Edit w;
-    w.show();
+    FT_Edit editor;
+    editor.show();
 
     return app.exec();
 }

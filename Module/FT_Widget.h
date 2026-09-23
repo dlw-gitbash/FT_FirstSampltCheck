@@ -1,10 +1,10 @@
-#ifndef FHINTWIDGETS_H
-#define FHINTWIDGETS_H
+#ifndef FT_WIDGET_H
+#define FT_WIDGET_H
 
-#include <QLineEdit>
 #include <QComboBox>
 #include <QTextEdit>
 #include <QSpinBox>
+#include <QKeyEvent>
 #include <QString>
 
 class QLabel;
@@ -15,6 +15,7 @@ constexpr int kFHintMinHeight        = 36;
 constexpr int kFHintTitleTop         = 2;
 constexpr int kFHintSingleTopPadding = kFHintTitleTop + kFHintTitleHeight;
 constexpr int kFHintComboArrowReserve = 20;
+constexpr int kTitleLeft             = 6;
 
 class FHintComboBox : public QComboBox
 {
@@ -77,10 +78,11 @@ public:
 
 protected:
     void resizeEvent(QResizeEvent* event) override;
+    void keyPressEvent(QKeyEvent* event) override;
     void wheelEvent(QWheelEvent* event) override;
 
 private:
     QLabel* m_titleLabel = nullptr;
 };
 
-#endif // FHINTWIDGETS_H
+#endif // FT_WIDGET_H

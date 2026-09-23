@@ -1,7 +1,7 @@
 #pragma once
 
-#include "core/LogModel.h"
-#include "core/LogFilterProxy.h"
+#include "LogModel.h"
+#include "LogFilterProxy.h"
 #include <QWidget>
 #include <QTableView>
 #include <QHeaderView>

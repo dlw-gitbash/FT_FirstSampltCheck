@@ -1,4 +1,4 @@
-#include "FHintWidgets.h"
+#include "FT_Widget.h"
 
 #include <QLabel>
 #include <QLineEdit>
@@ -13,9 +13,9 @@
 #include <QPalette>
 #include <QColor>
 
-static constexpr int kTitleLeft = 6;
+namespace {
 
-static QLabel* makeTitleLabel(QWidget* host, const QString& title)
+QLabel* makeTitleLabel(QWidget* host, const QString& title)
 {
     auto* label = new QLabel(host);
     label->setObjectName(QStringLiteral("FHintTitle"));
@@ -39,7 +39,7 @@ static QLabel* makeTitleLabel(QWidget* host, const QString& title)
     return label;
 }
 
-static void placeTitleLabel(QLabel* label, int hostWidth, int rightReserve = 0)
+void placeTitleLabel(QLabel* label, int hostWidth, int rightReserve = 0)
 {
     if (!label)
         return;
@@ -47,6 +47,8 @@ static void placeTitleLabel(QLabel* label, int hostWidth, int rightReserve = 0)
                        qMax(0, hostWidth - 2 * kTitleLeft - rightReserve),
                        kFHintTitleHeight);
 }
+
+} // anonymous namespace
 
 FHintComboBox::FHintComboBox(const QString& title, QWidget* parent)
     : QComboBox(parent)
@@ -116,7 +118,6 @@ FHintTextEdit::FHintTextEdit(const QString& title, QWidget* parent)
     setViewportMargins(4, kFHintSingleTopPadding, 4, 1);
     placeTitleLabel(m_titleLabel, width());
 
-    m_singleHeight = kFHintMinHeight;
     setMinimumHeight(m_singleHeight);
     setMaximumHeight(QWIDGETSIZE_MAX);
 
@@ -218,6 +219,13 @@ void FHintSpinBox::resizeEvent(QResizeEvent* event)
 {
     QSpinBox::resizeEvent(event);
     placeTitleLabel(m_titleLabel, event->size().width());
+}
+
+void FHintSpinBox::keyPressEvent(QKeyEvent* event)
+{
+    QSpinBox::keyPressEvent(event);
+    if (event->key() == Qt::Key_Return || event->key() == Qt::Key_Enter)
+        event->accept();
 }
 
 void FHintSpinBox::wheelEvent(QWheelEvent* event)

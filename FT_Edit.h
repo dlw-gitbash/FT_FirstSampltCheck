@@ -2,61 +2,16 @@
 #define FT_EDIT_H
 
 #include <QWidget>
-#include <QTreeWidget>
-#include <QListWidget>
-#include "FT_FunctionConfig.h"
 
 class QTreeWidgetItem;
 class QLabel;
 class QStatusBar;
 class QCloseEvent;
-class FT_FunctionCard;
-class FtDropIndicator;
-
-class FT_FunctionTree : public QTreeWidget
-{
-    Q_OBJECT
-public:
-    explicit FT_FunctionTree(QWidget* parent = nullptr);
-
-protected:
-    QMimeData* mimeData(const QList<QTreeWidgetItem*>& items) const override;
-    QStringList mimeTypes() const override;
-    Qt::DropActions supportedDropActions() const override;
-};
-
-class FT_FunctionList : public QListWidget
-{
-    Q_OBJECT
-public:
-    explicit FT_FunctionList(QWidget* parent = nullptr);
-
-signals:
-    void treeNodeDropped(int nodeType, int atRow);
-    void cardMoved(int fromRow, int toRow);
-    void emptyAreaDoubleClicked();
-    void cardEnterPressed(int row);
-
-protected:
-    void startDrag(Qt::DropActions supportedActions) override;
-    void dragEnterEvent(QDragEnterEvent* event) override;
-    void dragMoveEvent(QDragMoveEvent* event) override;
-    void dragLeaveEvent(QDragLeaveEvent* event) override;
-    void dropEvent(QDropEvent* event) override;
-    void mouseDoubleClickEvent(QMouseEvent* event) override;
-    void keyPressEvent(QKeyEvent* event) override;
-
-private:
-    void updateDropIndicator(const QPoint& pos);
-    void hideDropIndicator();
-    void updateDragPreview(const QPoint& pos);
-    void hideDragPreview();
-
-    FtDropIndicator* m_dropIndicator  = nullptr;
-    QLabel*          m_dragPreview    = nullptr;
-    int              m_dragOverRow    = -1;
-    int              m_dragSourceRow  = -1;
-};
+class FT_FunctionItem;
+class FT_FunctionTree;
+class FT_FunctionList;
+class FT_Function;
+class FT_Project;
 
 class FT_Edit : public QWidget
 {
@@ -64,54 +19,61 @@ class FT_Edit : public QWidget
 public:
     explicit FT_Edit(QWidget* parent = nullptr);
 
-    FT_FunctionCard* addCard(int atRow = -1);
-    void addTboxRow();
+    FT_FunctionItem* addItem(int atIndex = -1);
+    void addTboxItem(int atIndex = -1);
+    void addIicWriteItem(int atIndex = -1);
+    void addIicWriteReadItem(int atIndex = -1);
 
 private slots:
     void onTreeItemDoubleClicked(QTreeWidgetItem* item, int column);
-    void onTreeNodeDropped(int nodeType, int atRow);
-    void onCardMoved(int fromRow, int toRow);
+    void onTreeNodeDropped(int nodeType, int atIndex);
+    void onItemMoved(int fromIndex, int toIndex);
+    void onInternalReorder(int from, int to);
     void onEmptyAreaDoubleClicked();
-    void onCardEnterPressed(int row);
+    void onItemEnterPressed(int index);
 
 private:
     enum NodeType
     {
         NodeFunctions   = 1,
-        NodeTboxCommand = 2
+        NodeTboxCommand = 2,
+        NodeIicWrite    = 3,
+        NodeIicWriteRead = 4
     };
 
     void buildButtonBar();
     void buildTree();
-    void buildCardList();
+    void buildItemList();
 
-    FT_FunctionCard* currentCard() const;
-    FT_FunctionCard* cardAtRow(int row) const;
+    FT_FunctionItem* currentItem() const;
+    FT_FunctionItem* itemAt(int index) const;
 
-    void removeCard(FT_FunctionCard* card);
-    void deleteCurrentCard();
-    void moveCurrentCard(int delta);
+    FT_FunctionItem* addFunctionItem(FT_Function* func, int atIndex, const QString& statusMessage);
+    void removeItem(FT_FunctionItem* item);
+    void deleteCurrentItem();
+    void moveCurrentItem(int delta);
+    void moveItemUp(FT_FunctionItem* item);
+    void moveItemDown(FT_FunctionItem* item);
+    // 把第 from 行移动到插入位置 insertionPos（取值 0..count()）。
+    // 注意：QListWidget 的 setItemWidget 控件绑定在 model index 上，
+    // takeItem/removeItemWidget 都会立即 deleteLater 掉行控件，
+    // 因此重排只能在固定的行之间轮转 config，不能移动 QListWidgetItem。
+    void moveFunctionRow(int from, int insertionPos);
 
     bool exportConfig();
     void importConfig();
-    void clearAllCards();
+    void clearAllItems();
 
     bool eventFilter(QObject* watched, QEvent* event) override;
     void closeEvent(QCloseEvent* event) override;
     void updateEmptyHint();
 
-    void markDirty();
-    void markClean();
-    bool confirmDiscardIfDirty(const QString& actionTitle);
-    bool payloadHexOk(const FT_FunctionDocument& doc, QString* errorDetail) const;
-
     QWidget*         m_buttonBar     = nullptr;
     FT_FunctionTree* m_funcTree      = nullptr;
     FT_FunctionList* m_funcList      = nullptr;
+    FT_Project*      m_project       = nullptr;
     QLabel*          m_emptyHint     = nullptr;
     QStatusBar*      m_statusBar     = nullptr;
-    bool             m_dirty         = false;
-    bool             m_suppressDirty = false;
 };
 
 #endif // FT_EDIT_H

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "core/LogFilterProxy.h"
+#include "LogFilterProxy.h"
 #include <QWidget>
 #include <QLineEdit>
 #include <QComboBox>
