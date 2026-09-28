@@ -331,10 +331,18 @@ void FT_FunctionGroup::startDrag(Qt::DropActions /*supportedActions*/)
     if (!item) return;
 
     const int row = QListWidget::row(item);
+    FT_Function* f = functionAt(row);
+    if (!f) return;
+
     ftSetCommandDragSource(this, row);
 
+    // MIME 里放命令内容(JSON)而不是行号:
+    // 拖到外层 FT_FunctionList 的步骤间隙松手时,FT_Edit::onCommandDroppedToGap 会直接解析它
+    // 并新建一个 Step(源命令由其按拖拽源信息删除);组内/跨组落点仍由静态拖拽源信息处理。
+    const FtJson j = ftFunctionDataToJson(f->toConfig());
     QMimeData* mimeData = new QMimeData();
-    mimeData->setData(QLatin1String(kFtCommandMime), QByteArray::number(row));
+    mimeData->setData(QLatin1String(kFtCommandMime),
+                      QByteArray::fromStdString(j.dump()));
 
     auto* drag = new QDrag(this);
     drag->setMimeData(mimeData);
