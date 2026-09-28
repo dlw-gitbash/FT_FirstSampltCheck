@@ -27,13 +27,6 @@ FT_FunctionItem::FT_FunctionItem(QWidget* parent)
     m_titleEdit->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Expanding);
     m_titleEdit->setPlaceholderText(tr("Title"));
 
-    m_delaySpin = new FHintSpinBox(tr("Delay"), this);
-    m_delaySpin->setFixedWidth(kItemDelayWidth);
-    m_delaySpin->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Expanding);
-    m_delaySpin->setRange(0, 60000);
-    m_delaySpin->setSingleStep(100);
-    m_delaySpin->setValue(1000);
-
     m_group = new FT_FunctionGroup(this);
 
     auto* root = new QHBoxLayout(this);
@@ -42,7 +35,6 @@ FT_FunctionItem::FT_FunctionItem(QWidget* parent)
     root->addWidget(m_enableCheck, 0);
     root->addWidget(m_titleEdit,   0);
     root->addWidget(m_group,       1);
-    root->addWidget(m_delaySpin,   0);
 
     connect(m_titleEdit, &FHintTextEdit::textChanged, this, [this]() {
         if (!m_loading)
@@ -56,8 +48,6 @@ FT_FunctionItem::FT_FunctionItem(QWidget* parent)
         if (!m_loading)
             emit contentChanged();
     });
-    connect(m_delaySpin, QOverload<int>::of(&FHintSpinBox::valueChanged),
-            this, [this](int) { if (!m_loading) emit contentChanged(); });
 
     connect(m_group, &FT_FunctionGroup::contentChanged, this, [this]() {
         if (!m_loading)
@@ -121,7 +111,6 @@ FT_FunctionItemConfig FT_FunctionItem::toConfig() const
     FT_FunctionItemConfig cfg;
     cfg.enabled = m_enableCheck->isChecked();
     cfg.title = m_titleEdit->toPlainText().trimmed();
-    cfg.delayMs = m_delaySpin->value();
     cfg.lines = m_group->toLines();
     return cfg;
 }
@@ -132,7 +121,6 @@ void FT_FunctionItem::applyConfig(const FT_FunctionItemConfig& cfg)
 
     m_enableCheck->setChecked(cfg.enabled);
     m_titleEdit->setPlainText(cfg.title);
-    m_delaySpin->setValue(cfg.delayMs);
     m_group->applyLines(cfg.lines);
 
     m_loading = false;

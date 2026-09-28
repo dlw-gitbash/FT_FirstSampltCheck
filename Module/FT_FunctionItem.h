@@ -7,7 +7,6 @@
 
 class QCheckBox;
 class FHintTextEdit;
-class FHintSpinBox;
 class FT_FunctionGroup;
 
 class FT_FunctionItem : public QWidget
@@ -41,7 +40,6 @@ private:
     QCheckBox*          m_enableCheck  = nullptr;
     FHintTextEdit*      m_titleEdit    = nullptr;
     FT_FunctionGroup*   m_group        = nullptr;
-    FHintSpinBox*       m_delaySpin    = nullptr;
     int                 m_cachedHeight  = 0;
     bool                m_loading       = false;
     bool                m_adjusting     = false;

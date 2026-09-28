@@ -34,9 +34,30 @@ FT_Function::FT_Function(QWidget* parent)
     m_functionLayout = new QHBoxLayout(this);
     m_functionLayout->setContentsMargins(0, 0, 0, 0);
     m_functionLayout->setSpacing(6);
+
+    // Delay 控件由基类统一创建,各子类把它加入自己布局的最右侧
+    m_delaySpin = new FHintSpinBox(tr("Delay"), this);
+    m_delaySpin->setFixedWidth(kFunctionDelayWidth);
+    m_delaySpin->setRange(0, 60000);
+    m_delaySpin->setSingleStep(100);
+    m_delaySpin->setValue(1000);
+    m_delaySpin->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Expanding);
+    connect(m_delaySpin, QOverload<int>::of(&FHintSpinBox::valueChanged),
+            this, &FT_Function::contentChanged);
 }
 
 FT_Function::~FT_Function() = default;
+
+int FT_Function::delayMs() const
+{
+    return m_delaySpin ? m_delaySpin->value() : 1000;
+}
+
+void FT_Function::setDelayMs(int ms)
+{
+    if (m_delaySpin)
+        m_delaySpin->setValue(ms);
+}
 
 int FT_Function::packMinimumWidth() const
 {
@@ -493,6 +514,7 @@ FT_TboxFunction::FT_TboxFunction(QWidget* parent)
     layout->addWidget(m_combo,   0);
     layout->addWidget(m_payload, 1);
     layout->addWidget(m_advance, 0);
+    layout->addWidget(m_delaySpin, 0);
 
     connect(m_combo, &FHintComboBox::currentTextChanged,
             this, &FT_Function::contentChanged);
@@ -515,6 +537,7 @@ FT_FunctionData FT_TboxFunction::toConfig() const
     cfg.command = m_combo->currentText();
     cfg.payload = m_payload->toPlainText();
     cfg.advance = m_advanceCfg;
+    cfg.delayMs = delayMs();
     return QVariant::fromValue(cfg);
 }
 
@@ -534,6 +557,7 @@ void FT_TboxFunction::applyConfig(const FT_FunctionData& data)
         m_combo->setCurrentIndex(0);
     }
     m_payload->setPlainText(t.payload);
+    setDelayMs(t.delayMs);
 
     m_advanceCfg = t.advance;
     updateAdvanceLabel();
@@ -606,6 +630,7 @@ FT_IicWriteFunction::FT_IicWriteFunction(QWidget* parent)
     layout->addWidget(m_reg,     1);
     layout->addWidget(m_payload, 1);
     layout->addWidget(m_advance, 0);
+    layout->addWidget(m_delaySpin, 0);
 
     connect(m_port,    QOverload<int>::of(&FHintSpinBox::valueChanged),
             this, &FT_Function::contentChanged);
@@ -630,6 +655,7 @@ FT_FunctionData FT_IicWriteFunction::toConfig() const
     cfg.reg     = m_reg->toPlainText();
     cfg.payload = m_payload->toPlainText();
     cfg.advance = m_advanceCfg;
+    cfg.delayMs = delayMs();
     return QVariant::fromValue(cfg);
 }
 
@@ -642,6 +668,7 @@ void FT_IicWriteFunction::applyConfig(const FT_FunctionData& data)
     m_port->setValue(cfg.port);
     m_reg->setPlainText(cfg.reg);
     m_payload->setPlainText(cfg.payload);
+    setDelayMs(cfg.delayMs);
 
     m_advanceCfg = cfg.advance;
     updateAdvanceLabel();
@@ -721,6 +748,7 @@ FT_IicWriteReadFunction::FT_IicWriteReadFunction(QWidget* parent)
     layout->addWidget(m_payload,    1);
     layout->addWidget(m_readLength, 0);
     layout->addWidget(m_advance,    0);
+    layout->addWidget(m_delaySpin,  0);
 
     connect(m_port,       QOverload<int>::of(&FHintSpinBox::valueChanged),
             this, &FT_Function::contentChanged);
@@ -748,6 +776,7 @@ FT_FunctionData FT_IicWriteReadFunction::toConfig() const
     cfg.payload    = m_payload->toPlainText();
     cfg.readLength = m_readLength->value();
     cfg.advance    = m_advanceCfg;
+    cfg.delayMs    = delayMs();
     return QVariant::fromValue(cfg);
 }
 
@@ -761,6 +790,7 @@ void FT_IicWriteReadFunction::applyConfig(const FT_FunctionData& data)
     m_reg->setPlainText(cfg.reg);
     m_payload->setPlainText(cfg.payload);
     m_readLength->setValue(cfg.readLength);
+    setDelayMs(cfg.delayMs);
 
     m_advanceCfg = cfg.advance;
     updateAdvanceLabel();

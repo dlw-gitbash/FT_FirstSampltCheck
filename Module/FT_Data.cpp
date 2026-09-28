@@ -100,6 +100,7 @@ FtJson ftFunctionDataToJson(const FT_FunctionData& data)
         j["type"]     = "TBoxCommand";
         j["command"]  = t.command.toStdString();
         j["payload"]  = t.payload.toStdString();
+        j["delayMs"]  = t.delayMs;
         j["advance"]  = advanceToJson(t.advance);
         return j;
     }
@@ -110,6 +111,7 @@ FtJson ftFunctionDataToJson(const FT_FunctionData& data)
         j["port"]     = cfg.port;
         j["reg"]      = cfg.reg.toStdString();
         j["payload"]  = cfg.payload.toStdString();
+        j["delayMs"]  = cfg.delayMs;
         j["advance"]  = advanceToJson(cfg.advance);
         return j;
     }
@@ -121,6 +123,7 @@ FtJson ftFunctionDataToJson(const FT_FunctionData& data)
         j["reg"]        = cfg.reg.toStdString();
         j["payload"]    = cfg.payload.toStdString();
         j["readLength"] = cfg.readLength;
+        j["delayMs"]    = cfg.delayMs;
         j["advance"]    = advanceToJson(cfg.advance);
         return j;
     }
@@ -134,6 +137,7 @@ FT_FunctionData ftFunctionDataFromJson(const FtJson& j)
         FT_TboxConfig t;
         t.command  = ftStrField(j, "command");
         t.payload  = ftStrField(j, "payload");
+        t.delayMs  = ftIntField(j, "delayMs", 1000);
         auto advIt = j.find("advance");
         if (advIt != j.end() && advIt->is_object())
             t.advance = advanceFromJson(*advIt);
@@ -146,6 +150,7 @@ FT_FunctionData ftFunctionDataFromJson(const FtJson& j)
         cfg.port    = ftIntField(j, "port");
         cfg.reg     = ftStrField(j, "reg");
         cfg.payload = ftStrField(j, "payload");
+        cfg.delayMs = ftIntField(j, "delayMs", 1000);
         auto advIt  = j.find("advance");
         if (advIt != j.end() && advIt->is_object())
             cfg.advance = advanceFromJson(*advIt);
@@ -159,6 +164,7 @@ FT_FunctionData ftFunctionDataFromJson(const FtJson& j)
         cfg.reg        = ftStrField(j, "reg");
         cfg.payload    = ftStrField(j, "payload");
         cfg.readLength = ftIntField(j, "readLength", 1);
+        cfg.delayMs    = ftIntField(j, "delayMs", 1000);
         auto advIt     = j.find("advance");
         if (advIt != j.end() && advIt->is_object())
             cfg.advance = advanceFromJson(*advIt);
@@ -208,7 +214,6 @@ FtJson ftItemToJson(const FT_FunctionItemConfig& config)
     FtJson j;
     j["enabled"] = config.enabled;
     j["title"]   = config.title.toStdString();
-    j["delayMs"] = config.delayMs;
     j["lines"]   = ftLinesToJson(config.lines);
     return j;
 }
@@ -218,7 +223,6 @@ FT_FunctionItemConfig ftItemFromJson(const FtJson& j)
     FT_FunctionItemConfig cfg;
     cfg.enabled = ftBoolField(j, "enabled", true);
     cfg.title   = ftStrField(j, "title");
-    cfg.delayMs = ftIntField(j, "delayMs", 1000);
 
     auto linesIt = j.find("lines");
     if (linesIt != j.end() && linesIt->is_array()) {

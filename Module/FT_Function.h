@@ -64,6 +64,12 @@ protected:
     // 在本命令及其子控件上安装右键菜单事件过滤器(子类构造末尾调用一次)
     void installCommandMenuFilters();
 
+    // 命令延时(ms):基类共享控件,由各子类加入自己的布局最右侧
+    int  delayMs() const;
+    void setDelayMs(int ms);
+
+    FHintSpinBox* m_delaySpin = nullptr;
+
     void contextMenuEvent(QContextMenuEvent* event) override;
     bool eventFilter(QObject* watched, QEvent* event) override;
 

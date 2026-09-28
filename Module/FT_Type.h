@@ -26,10 +26,10 @@ constexpr int kItemSpacing       = 6;
 constexpr int kItemTitleMinH     = 36;
 constexpr int kItemDefaultH      = 48;
 constexpr int kItemListPadV      = 2;
-constexpr int kItemDelayWidth    = 80;
 
 // FT_Function (单个命令)
 constexpr int kFunctionDefaultH  = 36;
+constexpr int kFunctionDelayWidth = 80;
 
 // 命令工厂类型名(FtFunctionFactory::create / 菜单 / 拖拽 MIME 等共用)
 inline constexpr const char kFtTypeTbox[]         = "TBoxCommand";
@@ -67,6 +67,7 @@ struct FT_TboxConfig
     QString command;
     QString payload;
     FT_AdvanceConfig advance;
+    int     delayMs = 1000;
 };
 
 struct FT_IicWriteConfig
@@ -75,6 +76,7 @@ struct FT_IicWriteConfig
     QString reg;
     QString payload;
     FT_AdvanceConfig advance;
+    int     delayMs = 1000;
 };
 
 struct FT_IicWriteReadConfig
@@ -84,6 +86,7 @@ struct FT_IicWriteReadConfig
     QString payload;
     int    readLength = 1;
     FT_AdvanceConfig advance;
+    int     delayMs = 1000;
 };
 
 using FT_FunctionData = QVariant;
@@ -97,7 +100,6 @@ struct FT_FunctionItemConfig
 {
     bool     enabled = true;
     QString  title;
-    int      delayMs = 1000;
     FT_FunctionLines lines;
 };
 

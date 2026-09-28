@@ -6,6 +6,7 @@
 #include "FT_Type.h"
 
 class FT_Function;
+class FtDropIndicator;
 
 inline constexpr const char kFtNodeMime[]    = "application/x-ft-node";
 inline constexpr const char kFtCommandMime[] = "application/x-ft-command";
@@ -63,6 +64,7 @@ protected:
     void startDrag(Qt::DropActions supportedActions) override;
     void dragEnterEvent(QDragEnterEvent* event) override;
     void dragMoveEvent(QDragMoveEvent* event) override;
+    void dragLeaveEvent(QDragLeaveEvent* event) override;
     void dropEvent(QDropEvent* event) override;
     QStringList mimeTypes() const override;
     void contextMenuEvent(QContextMenuEvent* event) override;
@@ -86,8 +88,14 @@ private:
     void removeRowInternal(int row);
     void showGroupMenu(const QPoint& globalPos, const QPoint& localPos);
 
+    // 自绘插入指示线(与 FT_FunctionList 同款控件),落点行由 m_dragOverRow 给出
+    void updateDropIndicator(const QPoint& pos);
+    void hideDropIndicator();
+
     bool m_updating = false;
     bool m_notifyPending = false;
+    FtDropIndicator* m_dropIndicator = nullptr;
+    int  m_dragOverRow = -1;
 };
 
 #endif

@@ -2,6 +2,8 @@
 #include "FT_Function.h"
 #include "FT_Data.h"
 #include "FT_Log.h"
+// 复用 FT_FunctionList 里的 FtDropIndicator(自绘插入指示线),保证组内/组外观感一致。
+#include "FT_FunctionList.h"
 
 #include <QContextMenuEvent>
 #include <QMenu>
@@ -11,6 +13,7 @@
 #include <QMimeData>
 #include <QDragEnterEvent>
 #include <QDragMoveEvent>
+#include <QDragLeaveEvent>
 #include <QDropEvent>
 #include <QMouseEvent>
 #include <QResizeEvent>
@@ -52,7 +55,12 @@ FT_FunctionGroup::FT_FunctionGroup(QWidget* parent)
     setAcceptDrops(true);
     setDragDropMode(QAbstractItemView::InternalMove);
     setDefaultDropAction(Qt::MoveAction);
-    setDropIndicatorShown(true);
+    // 关闭 Qt 自带的插入指示,改用自绘指示线(见 updateDropIndicator),
+    // 以便落点与 m_dragOverRow 完全一致(与 FT_FunctionList 同款做法)。
+    setDropIndicatorShown(false);
+
+    m_dropIndicator = new FtDropIndicator(viewport());
+    m_dropIndicator->raise();
 
     setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
@@ -269,6 +277,54 @@ FtGroupHit FT_FunctionGroup::hitTest(const QPoint& pos) const
     return hit;
 }
 
+// 与 FT_FunctionList::updateDropIndicator 同款:按光标落在行的上半/下半,
+// 把指示线画在该行上沿或下沿,并用 m_dragOverRow 记下"松手后命令要插到第几行"。
+void FT_FunctionGroup::updateDropIndicator(const QPoint& pos)
+{
+    if (!m_dropIndicator)
+        return;
+
+    const int vw = viewport()->width();
+    const int ih = m_dropIndicator->height();
+
+    if (QListWidget::count() == 0) {
+        m_dropIndicator->setGeometry(0, 0, vw, ih);
+        m_dropIndicator->raise();
+        m_dropIndicator->show();
+        m_dragOverRow = 0;
+        return;
+    }
+
+    QListWidgetItem* at = itemAt(pos);
+    if (!at) {
+        // 落在最后一行下方/空白处 → 追加到末尾
+        const int lastRow = QListWidget::count() - 1;
+        const QRect r = visualItemRect(QListWidget::item(lastRow));
+        m_dropIndicator->setGeometry(0, r.bottom() + 1, vw, ih);
+        m_dropIndicator->raise();
+        m_dropIndicator->show();
+        m_dragOverRow = QListWidget::count();
+        return;
+    }
+
+    const QRect r = visualItemRect(at);
+    const int rowMid = r.center().y();
+    const bool insertAbove = (pos.y() < rowMid);
+    const int y = insertAbove ? r.top() - ih / 2 : r.bottom() + 1 - ih / 2;
+
+    m_dropIndicator->setGeometry(0, y, vw, ih);
+    m_dropIndicator->raise();
+    m_dropIndicator->show();
+    m_dragOverRow = QListWidget::row(at) + (insertAbove ? 0 : 1);
+}
+
+void FT_FunctionGroup::hideDropIndicator()
+{
+    if (m_dropIndicator)
+        m_dropIndicator->hide();
+    m_dragOverRow = -1;
+}
+
 void FT_FunctionGroup::startDrag(Qt::DropActions /*supportedActions*/)
 {
     QListWidgetItem* item = currentItem();
@@ -289,8 +345,10 @@ void FT_FunctionGroup::startDrag(Qt::DropActions /*supportedActions*/)
 
 void FT_FunctionGroup::dragEnterEvent(QDragEnterEvent* event)
 {
-    if (event->mimeData()->hasFormat(QLatin1String(kFtNodeMime)) ||
-        event->mimeData()->hasFormat(QLatin1String(kFtCommandMime))) {
+    const QMimeData* md = event->mimeData();
+    if (md->hasFormat(QLatin1String(kFtNodeMime)) ||
+        md->hasFormat(QLatin1String(kFtCommandMime))) {
+        updateDropIndicator(event->position().toPoint());
         event->acceptProposedAction();
         return;
     }
@@ -299,53 +357,65 @@ void FT_FunctionGroup::dragEnterEvent(QDragEnterEvent* event)
 
 void FT_FunctionGroup::dragMoveEvent(QDragMoveEvent* event)
 {
-    if (event->mimeData()->hasFormat(QLatin1String(kFtNodeMime)) ||
-        event->mimeData()->hasFormat(QLatin1String(kFtCommandMime))) {
+    const QMimeData* md = event->mimeData();
+    if (md->hasFormat(QLatin1String(kFtNodeMime)) ||
+        md->hasFormat(QLatin1String(kFtCommandMime))) {
+        updateDropIndicator(event->position().toPoint());
         event->acceptProposedAction();
         return;
     }
     QListWidget::dragMoveEvent(event);
 }
 
+void FT_FunctionGroup::dragLeaveEvent(QDragLeaveEvent* event)
+{
+    hideDropIndicator();
+    QListWidget::dragLeaveEvent(event);
+}
+
 void FT_FunctionGroup::dropEvent(QDropEvent* event)
 {
+    // 落点行以自绘指示线给出的 m_dragOverRow 为准(与用户看到的蓝线一致)。
+    const int toRow = m_dragOverRow;
+    hideDropIndicator();
+
     const QMimeData* md = event->mimeData();
 
-    if (md->hasFormat(QLatin1String(kFtNodeMime))) {
-        const int nodeType = md->data(QLatin1String(kFtNodeMime)).toInt();
+    // 若未收到过 dragMove 事件(极少见),退回按坐标 hitTest。
+    const auto resolvedIndex = [this, toRow, event]() -> int {
+        if (toRow >= 0)
+            return qBound(0, toRow, QListWidget::count());
 #if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
         const FtGroupHit hit = hitTest(event->position().toPoint());
 #else
         const FtGroupHit hit = hitTest(event->pos());
 #endif
-        if (hit.valid) {
-            emit nodeDroppedAt(nodeType, hit.index, false);
-        }
+        return hit.valid ? qBound(0, hit.index, QListWidget::count()) : -1;
+    };
+
+    if (md->hasFormat(QLatin1String(kFtNodeMime))) {
+        const int nodeType = md->data(QLatin1String(kFtNodeMime)).toInt();
+        const int idx = resolvedIndex();
+        if (idx >= 0)
+            emit nodeDroppedAt(nodeType, idx, false);
         event->acceptProposedAction();
         return;
     }
 
     if (md->hasFormat(QLatin1String(kFtCommandMime))) {
+        // 组内重排 / 跨组搬运统一交给 FT_Edit::onCommandIntoGroup:
+        // 那一层会先按拖拽源删掉原命令,同源时再修正目标行,所以这里只发落点行。
         const FtCommandDragSourceInfo src = ftCommandDragSource();
-        if (src.group && src.group != this && src.flat >= 0) {
-            FT_FunctionGroup* srcGroup = qobject_cast<FT_FunctionGroup*>(src.group);
-            if (srcGroup && src.flat < srcGroup->count()) {
-                FT_Function* sf = srcGroup->functionAt(src.flat);
-                if (sf) {
-                    const FT_FunctionData data = sf->toConfig();
-                    const FtJson j = ftFunctionDataToJson(data);
-                    const QByteArray payload =
-                        QByteArray::fromStdString(j.dump());
-#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
-                    const FtGroupHit hit = hitTest(event->position().toPoint());
-#else
-                    const FtGroupHit hit = hitTest(event->pos());
-#endif
-                    if (hit.valid)
-                        emit commandDroppedAt(payload, hit.index, false);
-                    event->acceptProposedAction();
-                    return;
-                }
+        FT_FunctionGroup* srcGroup = qobject_cast<FT_FunctionGroup*>(src.group);
+        if (srcGroup && src.flat >= 0 && src.flat < srcGroup->count()) {
+            FT_Function* sf = srcGroup->functionAt(src.flat);
+            const int idx = resolvedIndex();
+            if (sf && idx >= 0) {
+                const FtJson j = ftFunctionDataToJson(sf->toConfig());
+                const QByteArray payload = QByteArray::fromStdString(j.dump());
+                emit commandDroppedAt(payload, idx, false);
+                event->acceptProposedAction();
+                return;
             }
         }
         event->ignore();
