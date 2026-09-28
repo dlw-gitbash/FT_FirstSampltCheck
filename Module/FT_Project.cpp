@@ -47,9 +47,9 @@ bool FT_Project::validatePayloadHex(const FT_FunctionDocument& doc)
         const FT_FunctionItemConfig& cfg = doc[i];
         for (const QVector<FT_FunctionData>& line : cfg.lines) {
             for (const FT_FunctionData& data : line) {
-                if (!std::holds_alternative<FT_TboxConfig>(data))
+                if (!data.canConvert<FT_TboxConfig>())
                     continue;
-                const FT_TboxConfig& tbox = std::get<FT_TboxConfig>(data);
+                const FT_TboxConfig tbox = data.value<FT_TboxConfig>();
                 const QStringList tokens = ftSplitWs(tbox.payload);
                 if (!tokens.isEmpty() && !ftAllHexByteTokens(tokens)) {
                     m_lastError = QObject::tr("Step \"%1\": payload must be hex bytes "

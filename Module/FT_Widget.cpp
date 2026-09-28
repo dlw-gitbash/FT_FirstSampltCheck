@@ -1,7 +1,9 @@
 #include "FT_Widget.h"
+#include "FT_Log.h"
 
 #include <QLabel>
 #include <QLineEdit>
+#include <QAbstractTextDocumentLayout>
 #include <QResizeEvent>
 #include <QShowEvent>
 #include <QTimer>
@@ -121,7 +123,9 @@ FHintTextEdit::FHintTextEdit(const QString& title, QWidget* parent)
     setMinimumHeight(m_singleHeight);
     setMaximumHeight(QWIDGETSIZE_MAX);
 
-    connect(this, &QTextEdit::textChanged, this, &FHintTextEdit::adjustHeightToContent);
+    connect(this, &QTextEdit::textChanged, this, [this]() {
+        adjustHeightToContent(true);
+    });
 }
 
 void FHintTextEdit::setTitle(const QString& title)
@@ -142,7 +146,7 @@ void FHintTextEdit::setAutoGrow(bool on)
         setMinimumHeight(m_singleHeight);
         setMaximumHeight(QWIDGETSIZE_MAX);
         setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
-        adjustHeightToContent();
+        adjustHeightToContent(true);
     } else {
         setMinimumHeight(kFHintMinHeight);
         setMaximumHeight(QWIDGETSIZE_MAX);
@@ -150,22 +154,71 @@ void FHintTextEdit::setAutoGrow(bool on)
     }
 }
 
-void FHintTextEdit::adjustHeightToContent()
+void FHintTextEdit::refreshHeight()
+{
+    if (!m_autoGrow)
+        return;
+
+    int viewW = viewport()->width();
+    if (viewW <= 0)
+        viewW = width() - 2 * frameWidth();
+    FT_LOG("Widget.FHintTE.refresh", QString("viewportW=%1 width=%2 frameW=%3 viewW_used=%4")
+        .arg(viewport()->width()).arg(width()).arg(frameWidth()).arg(viewW));
+    if (viewW <= 0) {
+        FT_LOG("Widget.FHintTE.refresh", "viewW still <= 0, bail");
+        return;
+    }
+
+    document()->setTextWidth(viewW);
+    document()->documentLayout()->documentSize();
+    const int docH = qRound(document()->size().height());
+    const QMargins vm = viewportMargins();
+    const int needed = qMax(m_singleHeight,
+                            vm.top() + docH + vm.bottom() + 2 * frameWidth());
+    FT_LOG("Widget.FHintTE.refresh", QString("docH=%1 vmTop+Bot=%2 frameW*2=%3 needed=%4 currentMinH=%5")
+        .arg(docH).arg(vm.top() + vm.bottom()).arg(2 * frameWidth()).arg(needed).arg(minimumHeight()));
+    if (needed != minimumHeight()) {
+        FT_LOG("Widget.FHintTE.refresh", QString("setMinimumHeight: %1 -> %2").arg(minimumHeight()).arg(needed));
+        setMinimumHeight(needed);
+        updateGeometry();
+        emit heightChanged(needed);
+    }
+}
+
+void FHintTextEdit::adjustHeightToContent(bool force)
 {
     if (!m_autoGrow)
         return;
 
     const int viewW = viewport()->width();
+    FT_LOG("Widget.FHintTE.adjust", QString("viewportW=%1 width=%2 force=%3")
+        .arg(viewW).arg(width()).arg(force ? 1 : 0));
     if (viewW <= 0) {
-        QTimer::singleShot(0, this, &FHintTextEdit::adjustHeightToContent);
+        FT_LOG("Widget.FHintTE.adjust", "viewportW <= 0, QTimer delayed");
+        QTimer::singleShot(0, this, [this]() { adjustHeightToContent(true); });
         return;
     }
 
+    // 文档高度只取决于“换行宽度”和“文本内容”。宽度没变且内容没变时,
+    // 重新计算的结果必然与上次相同;但本函数会被 resizeEvent/layout 反复触发,
+    // 而且它算出的 minimumHeight 又会反过来驱动布局(布局→resizeEvent→本函数),
+    // 于是外部尺寸噪声被逐轮放大,表现为标题最小高度每轮 +1 行的棘轮式增长
+    // (整行步骤被越顶越高,组内留下一大片空灰)。
+    // 因此宽度未变就直接短路,只在宽度变化或文本变化(force=true)时才重算。
+    if (!force && viewW == m_lastLayoutWidth)
+        return;
+    m_lastLayoutWidth = viewW;
+
     document()->setTextWidth(viewW);
+    document()->documentLayout()->documentSize();
     const int docH = qRound(document()->size().height());
     const QMargins vm = viewportMargins();
     const int needed = qMax(m_singleHeight,
                             vm.top() + docH + vm.bottom() + 2 * frameWidth());
+    FT_LOG("Widget.FHintTE.adjust", QString("docH=%1 vmTop+Bot=%2 frameW*2=%3 needed=%4 minH=%5 h=%6 blocks=%7 chars=%8")
+        .arg(docH).arg(vm.top() + vm.bottom()).arg(2 * frameWidth()).arg(needed)
+        .arg(minimumHeight()).arg(height())
+        .arg(document()->blockCount()).arg(document()->characterCount()));
     if (needed != minimumHeight()) {
         setMinimumHeight(needed);
         updateGeometry();

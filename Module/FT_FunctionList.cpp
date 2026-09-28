@@ -59,8 +59,10 @@ FT_FunctionList::FT_FunctionList(QWidget* parent)
 {
     setFrameShape(QFrame::NoFrame);
     setSelectionMode(QAbstractItemView::SingleSelection);
-    setSpacing(2);
+    setSpacing(4);
+    setContentsMargins(4, 4, 4, 4);
     setVerticalScrollMode(QAbstractItemView::ScrollPerPixel);
+    setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
     setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     setDragEnabled(true);
     setAcceptDrops(true);

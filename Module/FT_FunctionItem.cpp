@@ -1,6 +1,7 @@
 #include "FT_FunctionItem.h"
 #include "FT_FunctionGroup.h"
 #include "FT_Widget.h"
+#include "FT_Log.h"
 
 #include <QCheckBox>
 #include <QListWidget>
@@ -11,15 +12,6 @@
 #include <QStyle>
 #include <QTimer>
 #include <QResizeEvent>
-
-namespace {
-constexpr int kItemMargin    = 2;
-constexpr int kItemSpacing   = 6;
-constexpr int kTitleMinH     = 36;
-constexpr int kItemDefaultH  = 48;
-constexpr int kListItemPadV  = 2;
-constexpr int kDelayWidth    = 80;
-}
 
 FT_FunctionItem::FT_FunctionItem(QWidget* parent)
     : QWidget(parent)
@@ -36,7 +28,7 @@ FT_FunctionItem::FT_FunctionItem(QWidget* parent)
     m_titleEdit->setPlaceholderText(tr("Title"));
 
     m_delaySpin = new FHintSpinBox(tr("Delay"), this);
-    m_delaySpin->setFixedWidth(kDelayWidth);
+    m_delaySpin->setFixedWidth(kItemDelayWidth);
     m_delaySpin->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Expanding);
     m_delaySpin->setRange(0, 60000);
     m_delaySpin->setSingleStep(100);
@@ -160,26 +152,30 @@ void FT_FunctionItem::adjustHeight()
 {
     if (m_adjusting) {
         m_pendingAdjust = true;
+        FT_LOG("FI.adjustHeight", "recursive guard hit, set pending");
         return;
     }
     m_adjusting = true;
     m_pendingAdjust = false;
 
-    int groupMinH = 0;
+    int groupH = 0;
     if (m_group) {
-        groupMinH = m_group->minimumHeight();
-        if (groupMinH <= 0) {
-            const int sh = m_group->sizeHint().height();
-            groupMinH = sh > 0 ? sh : m_group->height();
-        }
+        groupH = m_group->sizeHint().height();
+        if (groupH <= 0)
+            groupH = m_group->height();
     }
-    int titleMinH = kTitleMinH;
+    int titleMinH = kItemTitleMinH;
     if (m_titleEdit) {
         const int th = m_titleEdit->minimumHeight();
-        titleMinH = th > 0 ? th : qMax(kTitleMinH, m_titleEdit->sizeHint().height());
+        titleMinH = th > 0 ? th : qMax(kItemTitleMinH, m_titleEdit->sizeHint().height());
     }
-    const int contentH = qMax(titleMinH, groupMinH);
+    const int contentH = qMax(titleMinH, groupH);
     const int itemH = contentH + kItemMargin * 2;
+
+    FT_LOG("FI.adjustHeight", QString("group->sizeHint.h=%1 group->h=%2 titleMinH=%3 contentH=%4 itemH=%5")
+        .arg(m_group ? m_group->sizeHint().height() : -1)
+        .arg(m_group ? m_group->height() : -1)
+        .arg(titleMinH).arg(contentH).arg(itemH));
 
     m_cachedHeight = itemH;
     setFixedHeight(itemH);
@@ -189,19 +185,23 @@ void FT_FunctionItem::adjustHeight()
 
     if (m_pendingAdjust) {
         m_pendingAdjust = false;
+        FT_LOG("FI.adjustHeight", "re-trigger due to pending");
         adjustHeight();
         return;
     }
 
     QWidget* vp = parentWidget();
     QListWidget* outer = vp ? qobject_cast<QListWidget*>(vp->parentWidget()) : nullptr;
-    if (!outer)
+    if (!outer) {
+        FT_LOG("FI.adjustHeight", "outer QListWidget not found, skip item sizeHint update");
         return;
+    }
 
     for (int i = 0; i < outer->count(); ++i) {
         QListWidgetItem* outerItem = outer->item(i);
         if (outer->itemWidget(outerItem) == this) {
-            outerItem->setSizeHint(QSize(0, itemH + kListItemPadV));
+            outerItem->setSizeHint(QSize(0, itemH + kItemListPadV));
+            FT_LOG("FI.adjustHeight", QString("outer[%1].setSizeHint h=%2").arg(i).arg(itemH + kItemListPadV));
             break;
         }
     }

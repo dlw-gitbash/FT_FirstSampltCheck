@@ -57,11 +57,11 @@ QByteArray ftHexBytesToArray(const QStringList& tokens)
 
 QString ftFunctionDataTypeName(const FT_FunctionData& data)
 {
-    if (std::holds_alternative<FT_TboxConfig>(data))
+    if (data.canConvert<FT_TboxConfig>())
         return QStringLiteral("TBoxCommand");
-    if (std::holds_alternative<FT_IicWriteConfig>(data))
+    if (data.canConvert<FT_IicWriteConfig>())
         return QStringLiteral("IicWrite");
-    if (std::holds_alternative<FT_IicWriteReadConfig>(data))
+    if (data.canConvert<FT_IicWriteReadConfig>())
         return QStringLiteral("IicWriteRead");
     return QStringLiteral("Empty");
 }
@@ -94,8 +94,8 @@ static FT_AdvanceConfig advanceFromJson(const FtJson& j)
 
 FtJson ftFunctionDataToJson(const FT_FunctionData& data)
 {
-    if (std::holds_alternative<FT_TboxConfig>(data)) {
-        const FT_TboxConfig& t = std::get<FT_TboxConfig>(data);
+    if (data.canConvert<FT_TboxConfig>()) {
+        const FT_TboxConfig t = data.value<FT_TboxConfig>();
         FtJson j;
         j["type"]     = "TBoxCommand";
         j["command"]  = t.command.toStdString();
@@ -103,8 +103,8 @@ FtJson ftFunctionDataToJson(const FT_FunctionData& data)
         j["advance"]  = advanceToJson(t.advance);
         return j;
     }
-    if (std::holds_alternative<FT_IicWriteConfig>(data)) {
-        const FT_IicWriteConfig& cfg = std::get<FT_IicWriteConfig>(data);
+    if (data.canConvert<FT_IicWriteConfig>()) {
+        const FT_IicWriteConfig cfg = data.value<FT_IicWriteConfig>();
         FtJson j;
         j["type"]     = "IicWrite";
         j["port"]     = cfg.port;
@@ -113,8 +113,8 @@ FtJson ftFunctionDataToJson(const FT_FunctionData& data)
         j["advance"]  = advanceToJson(cfg.advance);
         return j;
     }
-    if (std::holds_alternative<FT_IicWriteReadConfig>(data)) {
-        const FT_IicWriteReadConfig& cfg = std::get<FT_IicWriteReadConfig>(data);
+    if (data.canConvert<FT_IicWriteReadConfig>()) {
+        const FT_IicWriteReadConfig cfg = data.value<FT_IicWriteReadConfig>();
         FtJson j;
         j["type"]       = "IicWriteRead";
         j["port"]       = cfg.port;
@@ -139,7 +139,7 @@ FT_FunctionData ftFunctionDataFromJson(const FtJson& j)
             t.advance = advanceFromJson(*advIt);
         else
             t.advance = FT_AdvanceConfig{};
-        return t;
+        return QVariant::fromValue(t);
     }
     if (ty == QLatin1String("IicWrite")) {
         FT_IicWriteConfig cfg;
@@ -151,7 +151,7 @@ FT_FunctionData ftFunctionDataFromJson(const FtJson& j)
             cfg.advance = advanceFromJson(*advIt);
         else
             cfg.advance = FT_AdvanceConfig{};
-        return cfg;
+        return QVariant::fromValue(cfg);
     }
     if (ty == QLatin1String("IicWriteRead")) {
         FT_IicWriteReadConfig cfg;
@@ -164,9 +164,9 @@ FT_FunctionData ftFunctionDataFromJson(const FtJson& j)
             cfg.advance = advanceFromJson(*advIt);
         else
             cfg.advance = FT_AdvanceConfig{};
-        return cfg;
+        return QVariant::fromValue(cfg);
     }
-    return std::monostate{};
+    return QVariant();
 }
 
 FtJson ftLinesToJson(const FT_FunctionLines& lines)

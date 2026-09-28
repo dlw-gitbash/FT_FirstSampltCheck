@@ -3,15 +3,33 @@
 
 #include <QString>
 #include <QVector>
-#include <variant>
+#include <QVariant>
 
 // =====================================================
 // FT_Type — 纯类型定义模块（Header-only）
-// 依赖：Qt Core、C++17
+// 依赖：Qt Core
 // 职责：所有数据结构、枚举、文档类型定义
 // =====================================================
 
 constexpr int kFtConfigVersion = 2;
+
+// ---------- UI Layout Constants ----------
+// FT_FunctionGroup
+constexpr int kGroupMinH         = 44;
+constexpr int kGroupRowSpacing   = 4;
+constexpr int kGroupMargin       = 4;
+constexpr int kGroupMinWidth     = 150;
+
+// FT_FunctionItem (Step 行)
+constexpr int kItemMargin        = 2;
+constexpr int kItemSpacing       = 6;
+constexpr int kItemTitleMinH     = 36;
+constexpr int kItemDefaultH      = 48;
+constexpr int kItemListPadV      = 2;
+constexpr int kItemDelayWidth    = 80;
+
+// FT_Function (单个命令)
+constexpr int kFunctionDefaultH  = 36;
 
 // 命令工厂类型名(FtFunctionFactory::create / 菜单 / 拖拽 MIME 等共用)
 inline constexpr const char kFtTypeTbox[]         = "TBoxCommand";
@@ -68,7 +86,7 @@ struct FT_IicWriteReadConfig
     FT_AdvanceConfig advance;
 };
 
-using FT_FunctionData = std::variant<std::monostate, FT_TboxConfig, FT_IicWriteConfig, FT_IicWriteReadConfig>;
+using FT_FunctionData = QVariant;
 
 // 一个 Step(FT_FunctionItem)内的命令分组:
 // 每个内层 QVector 代表一条“硬换行”行(右键/拖拽强制断点);
@@ -120,5 +138,9 @@ inline FtFailAction ftFailActionFromString(const QString& s)
     if (v == QLatin1String("ContinueAll"))  return FtFailAction::ContinueAll;
     return FtFailAction::Stop;
 }
+
+Q_DECLARE_METATYPE(FT_TboxConfig)
+Q_DECLARE_METATYPE(FT_IicWriteConfig)
+Q_DECLARE_METATYPE(FT_IicWriteReadConfig)
 
 #endif // FT_TYPE_H

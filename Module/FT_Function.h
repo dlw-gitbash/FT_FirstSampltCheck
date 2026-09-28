@@ -24,10 +24,14 @@ public:
     virtual FT_FunctionData toConfig() const = 0;
     virtual void applyConfig(const FT_FunctionData& data) = 0;
 
+    void refreshChildHeights();
+
     // 通用尺寸:宽度按内部固定控件+可扩展控件估算,
     // 高度取内部控件最小高的最大值(支持多行 payload 撑高)。
     QSize sizeHint() const override;
     QSize minimumSizeHint() const override;
+    int heightForWidth(int width) const override;
+    bool hasHeightForWidth() const override { return true; }
     // 流式布局打包时使用的最小宽度
     int packMinimumWidth() const;
 

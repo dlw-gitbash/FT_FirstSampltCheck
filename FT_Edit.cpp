@@ -841,17 +841,17 @@ bool FT_Edit::exportConfig()
 
         for (const QVector<FT_FunctionData>& line : cfg.lines) {
             for (const FT_FunctionData& data : line) {
-                if (std::holds_alternative<FT_TboxConfig>(data)) {
-                    const FT_TboxConfig& tbox = std::get<FT_TboxConfig>(data);
+                if (data.canConvert<FT_TboxConfig>()) {
+                    const FT_TboxConfig tbox = data.value<FT_TboxConfig>();
                     if (!checkPayload(tbox.payload, tr("payload")))
                         break;
-                } else if (std::holds_alternative<FT_IicWriteConfig>(data)) {
-                    const FT_IicWriteConfig& iw = std::get<FT_IicWriteConfig>(data);
+                } else if (data.canConvert<FT_IicWriteConfig>()) {
+                    const FT_IicWriteConfig iw = data.value<FT_IicWriteConfig>();
                     if (!checkPayload(iw.reg, tr("reg")) ||
                         !checkPayload(iw.payload, tr("payload")))
                         break;
-                } else if (std::holds_alternative<FT_IicWriteReadConfig>(data)) {
-                    const FT_IicWriteReadConfig& iwr = std::get<FT_IicWriteReadConfig>(data);
+                } else if (data.canConvert<FT_IicWriteReadConfig>()) {
+                    const FT_IicWriteReadConfig iwr = data.value<FT_IicWriteReadConfig>();
                     if (!checkPayload(iwr.reg, tr("reg")) ||
                         !checkPayload(iwr.payload, tr("payload")))
                         break;

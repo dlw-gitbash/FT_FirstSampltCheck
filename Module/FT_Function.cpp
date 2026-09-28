@@ -1,6 +1,7 @@
 #include "FT_Function.h"
 #include "FT_Widget.h"
 #include "FT_Data.h"
+#include "FT_Log.h"
 
 #include <QDialog>
 #include <QVBoxLayout>
@@ -27,10 +28,6 @@
 #include <QTimer>
 #include <QResizeEvent>
 
-namespace {
-constexpr int kFunctionDefaultHeight = 36;
-}
-
 FT_Function::FT_Function(QWidget* parent)
     : QWidget(parent)
 {
@@ -50,8 +47,8 @@ int FT_Function::packMinimumWidth() const
         if (!cw)
             continue;
         int cwMin = qMax(cw->minimumSize().width(), cw->minimumSizeHint().width());
-        // 固定宽度控件的 minimumSizeHint 可能大于其 fixed 宽度,
-        // 打包最小值必须受 maximumSize 约束,否则 min > max 会让换行判定失效。
+        // 固定宽度控件�?minimumSizeHint 可能大于�?fixed 宽度,
+        // 打包最小值必须受 maximumSize 约束,否则 min > max 会让换行判定失效�?
         const int cwMax = cw->maximumSize().width();
         if (cwMax < QWIDGETSIZE_MAX)
             cwMin = qMin(cwMin, cwMax);
@@ -64,18 +61,39 @@ int FT_Function::packMinimumWidth() const
     return qMax(w, 1);
 }
 
-QSize FT_Function::sizeHint() const
+void FT_Function::refreshChildHeights()
 {
-    int inner = kFHintMinHeight;
     for (int i = 0; i < m_functionLayout->count(); ++i) {
         QWidget* cw = m_functionLayout->itemAt(i)->widget();
         if (!cw)
             continue;
-        inner = qMax(inner, qMax(cw->minimumHeight(), cw->minimumSizeHint().height()));
+        if (FHintTextEdit* te = qobject_cast<FHintTextEdit*>(cw)) {
+            FT_LOG("FF.refresh", QString("  child[%1] FHintTextEdit before refresh minH=%2 viewportW=%3")
+                .arg(i).arg(te->minimumHeight()).arg(te->viewport()->width()));
+            te->refreshHeight();
+            FT_LOG("FF.refresh", QString("  child[%1] FHintTextEdit after refresh minH=%2")
+                .arg(i).arg(te->minimumHeight()));
+        }
+    }
+}
+
+QSize FT_Function::sizeHint() const
+{
+    int h = kFHintMinHeight;
+    QStringList childHeights;
+    for (int i = 0; i < m_functionLayout->count(); ++i) {
+        QWidget* cw = m_functionLayout->itemAt(i)->widget();
+        if (!cw)
+            continue;
+        const int ch = cw->minimumSizeHint().height();
+        childHeights << QString("[%1]minSH=%2").arg(i).arg(ch);
+        h = qMax(h, ch);
     }
     const QMargins mg = m_functionLayout->contentsMargins();
-    const int h = qMax(kFunctionDefaultHeight, inner + mg.top() + mg.bottom());
-    return QSize(packMinimumWidth(), h);
+    const int total = qMax(kFunctionDefaultH, h + mg.top() + mg.bottom());
+    FT_LOG("FF.sizeHint", QString("highestChild=%1 marginsT+B=%2 total=%3 children:%4")
+        .arg(h).arg(mg.top() + mg.bottom()).arg(total).arg(childHeights.join(" ")));
+    return QSize(packMinimumWidth(), total);
 }
 
 QSize FT_Function::minimumSizeHint() const
@@ -83,9 +101,18 @@ QSize FT_Function::minimumSizeHint() const
     return sizeHint();
 }
 
+int FT_Function::heightForWidth(int width) const
+{
+    Q_UNUSED(width);
+    return sizeHint().height();
+}
+
 void FT_Function::updateFunctionHeight()
 {
-    const int h = sizeHint().height();
+    const int w = width();
+    const int h = (w > 0)
+        ? qMax(heightForWidth(w), kFunctionDefaultH)
+        : qMax(sizeHint().height(), kFunctionDefaultH);
     if (h != minimumHeight()) {
         setMinimumHeight(h);
         updateGeometry();
@@ -104,7 +131,7 @@ void FT_Function::installCommandMenuFilters()
 bool FT_Function::eventFilter(QObject* watched, QEvent* event)
 {
     if (event->type() == QEvent::ContextMenu) {
-        // 文本/行输入控件保留系统原生右键菜单(复制、粘贴等)
+        // 文本/行输入控件保留系统原生右键菜�?复制、粘贴等)
         if (qobject_cast<QTextEdit*>(watched) || qobject_cast<QLineEdit*>(watched))
             return QWidget::eventFilter(watched, event);
         auto* ce = static_cast<QContextMenuEvent*>(event);
@@ -124,7 +151,7 @@ void FT_Function::showCommandMenu(const QPoint& globalPos)
     QMenu menu(this);
 
     // 命令区填满组后没有空白可右键,插入入口也放在命令菜单里:
-    // 新命令插到本命令之后、同一视觉行(放不下会自动软折行)。
+    // 新命令插到本命令之后、同一视觉�?放不下会自动软折�?�?
     QMenu* insertMenu = menu.addMenu(
         style()->standardIcon(QStyle::SP_FileIcon),
         tr("Insert Command After"));
@@ -426,7 +453,7 @@ FT_TboxFunction::FT_TboxFunction(QWidget* parent)
 {
     setObjectName(QStringLiteral("ftTboxFunction"));
     setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
-    setMinimumHeight(kFunctionDefaultHeight);
+    setMinimumHeight(kFunctionDefaultH);
     setStyleSheet(
         "QWidget#ftTboxFunction {"
         "  background-color: #ffffff;"
@@ -488,18 +515,18 @@ FT_FunctionData FT_TboxFunction::toConfig() const
     cfg.command = m_combo->currentText();
     cfg.payload = m_payload->toPlainText();
     cfg.advance = m_advanceCfg;
-    return cfg;
+    return QVariant::fromValue(cfg);
 }
 
 void FT_TboxFunction::applyConfig(const FT_FunctionData& data)
 {
-    if (!std::holds_alternative<FT_TboxConfig>(data))
+    if (!data.canConvert<FT_TboxConfig>())
         return;
 
     while (m_combo->count() > m_originalComboCount)
         m_combo->removeItem(m_combo->count() - 1);
 
-    const FT_TboxConfig& t = std::get<FT_TboxConfig>(data);
+    const FT_TboxConfig t = data.value<FT_TboxConfig>();
     if (int idx = m_combo->findText(t.command); idx >= 0) {
         m_combo->setCurrentIndex(idx);
     } else if (!t.command.isEmpty()) {
@@ -543,7 +570,7 @@ FT_IicWriteFunction::FT_IicWriteFunction(QWidget* parent)
 {
     setObjectName(QStringLiteral("ftIicWriteFunction"));
     setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
-    setMinimumHeight(kFunctionDefaultHeight);
+    setMinimumHeight(kFunctionDefaultH);
     setStyleSheet(
         "QWidget#ftIicWriteFunction {"
         "  background-color: #ffffff;"
@@ -603,15 +630,15 @@ FT_FunctionData FT_IicWriteFunction::toConfig() const
     cfg.reg     = m_reg->toPlainText();
     cfg.payload = m_payload->toPlainText();
     cfg.advance = m_advanceCfg;
-    return cfg;
+    return QVariant::fromValue(cfg);
 }
 
 void FT_IicWriteFunction::applyConfig(const FT_FunctionData& data)
 {
-    if (!std::holds_alternative<FT_IicWriteConfig>(data))
+    if (!data.canConvert<FT_IicWriteConfig>())
         return;
 
-    const FT_IicWriteConfig& cfg = std::get<FT_IicWriteConfig>(data);
+    const FT_IicWriteConfig cfg = data.value<FT_IicWriteConfig>();
     m_port->setValue(cfg.port);
     m_reg->setPlainText(cfg.reg);
     m_payload->setPlainText(cfg.payload);
@@ -651,7 +678,7 @@ FT_IicWriteReadFunction::FT_IicWriteReadFunction(QWidget* parent)
 {
     setObjectName(QStringLiteral("ftIicWriteReadFunction"));
     setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
-    setMinimumHeight(kFunctionDefaultHeight);
+    setMinimumHeight(kFunctionDefaultH);
     setStyleSheet(
         "QWidget#ftIicWriteReadFunction {"
         "  background-color: #ffffff;"
@@ -721,15 +748,15 @@ FT_FunctionData FT_IicWriteReadFunction::toConfig() const
     cfg.payload    = m_payload->toPlainText();
     cfg.readLength = m_readLength->value();
     cfg.advance    = m_advanceCfg;
-    return cfg;
+    return QVariant::fromValue(cfg);
 }
 
 void FT_IicWriteReadFunction::applyConfig(const FT_FunctionData& data)
 {
-    if (!std::holds_alternative<FT_IicWriteReadConfig>(data))
+    if (!data.canConvert<FT_IicWriteReadConfig>())
         return;
 
-    const FT_IicWriteReadConfig& cfg = std::get<FT_IicWriteReadConfig>(data);
+    const FT_IicWriteReadConfig cfg = data.value<FT_IicWriteReadConfig>();
     m_port->setValue(cfg.port);
     m_reg->setPlainText(cfg.reg);
     m_payload->setPlainText(cfg.payload);
