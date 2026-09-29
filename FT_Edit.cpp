@@ -154,6 +154,10 @@ void FT_Edit::buildTree()
 
     m_funcTree->setContextMenuPolicy(Qt::CustomContextMenu);
     connect(m_funcTree, &QWidget::customContextMenuRequested, this, [this](const QPoint& pos) {
+        // 这三项都作用于“当前步骤”,列表里没有步骤时无从可加
+        // (此时请用列表空白区菜单的 New Step with ...)。
+        const bool hasStep = (m_funcList->count() > 0);
+
         QMenu menu(m_funcTree);
         QAction* addTbox = menu.addAction(
             style()->standardIcon(QStyle::SP_FileIcon),
@@ -164,6 +168,9 @@ void FT_Edit::buildTree()
         QAction* addI2cWR = menu.addAction(
             style()->standardIcon(QStyle::SP_FileIcon),
             tr("Add to Current Step: I2C Write+Read"));
+        addTbox->setEnabled(hasStep);
+        addI2cW->setEnabled(hasStep);
+        addI2cWR->setEnabled(hasStep);
         QAction* chosen = menu.exec(m_funcTree->viewport()->mapToGlobal(pos));
         if (chosen == addTbox)
             addCommandToCurrentStep(QString::fromLatin1(kFtTypeTbox));

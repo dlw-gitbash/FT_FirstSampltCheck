@@ -67,11 +67,13 @@ FT_FunctionItem::FT_FunctionItem(QWidget* parent)
             this, &FT_FunctionItem::splitStepRequested);
     connect(m_group, &FT_FunctionGroup::requestInsertStepAfter,
             this, &FT_FunctionItem::insertStepAfterRequested);
-    connect(m_group, &FT_FunctionGroup::requestMergeWithNext,
-            this, &FT_FunctionItem::mergeWithNextRequested);
 
     setContextMenuPolicy(Qt::CustomContextMenu);
     connect(this, &QWidget::customContextMenuRequested, this, [this](const QPoint& pos) {
+        // 首行不能上移、末行不能下移/与下一步合并,菜单项要跟着灰掉。
+        int count = 0;
+        const int row = stepRow(&count);
+
         QMenu menu(this);
         QAction* up = menu.addAction(
             style()->standardIcon(QStyle::SP_ArrowUp),
@@ -90,6 +92,11 @@ FT_FunctionItem::FT_FunctionItem(QWidget* parent)
         QAction* del = menu.addAction(
             style()->standardIcon(QStyle::SP_TrashIcon),
             tr("Remove this Step"));
+
+        up->setEnabled(row > 0);
+        down->setEnabled(row >= 0 && row < count - 1);
+        merge->setEnabled(row >= 0 && row < count - 1);
+
         QAction* chosen = menu.exec(mapToGlobal(pos));
         if (chosen == up)
             emit moveUpRequested();
@@ -115,6 +122,28 @@ FT_FunctionItemConfig FT_FunctionItem::toConfig() const
     return cfg;
 }
 
+// 注意:本控件是外层 FT_FunctionList 的行控件,setItemWidget() 会把它挂到列表的
+// viewport 下,所以往上要跨过 viewport 才能拿到外层 QListWidget。
+int FT_FunctionItem::stepRow(int* outCount)
+{
+    QListWidget* outer = nullptr;
+    QWidget* w = this;
+    for (int hop = 0; w && hop < 4; ++hop, w = w->parentWidget()) {
+        if ((outer = qobject_cast<QListWidget*>(w)) != nullptr)
+            break;
+    }
+    if (!outer)
+        return -1;
+
+    if (outCount)
+        *outCount = outer->count();
+    for (int i = 0; i < outer->count(); ++i) {
+        if (outer->itemWidget(outer->item(i)) == this)
+            return i;
+    }
+    return -1;
+}
+
 void FT_FunctionItem::applyConfig(const FT_FunctionItemConfig& cfg)
 {
     m_loading = true;
@@ -132,6 +161,14 @@ void FT_FunctionItem::applyConfig(const FT_FunctionItemConfig& cfg)
 void FT_FunctionItem::resizeEvent(QResizeEvent* event)
 {
     QWidget::resizeEvent(event);
+
+    // 本行宽度变化时,组内命令行的宽度必须跟着重算。
+    // 不能指望组自己的 resizeEvent:高度没变时下面 adjustHeight() 会提前返回,
+    // 也就不会有 setFixedHeight → 组尺寸不变 → 组收不到 resizeEvent。
+    // 这里显式通知一次(scheduleNotifyResize 内部有 pending 合并,重复调用无额外开销)。
+    if (m_group && event->oldSize().width() != event->size().width())
+        m_group->scheduleNotifyResize();
+
     if (!m_loading && !m_adjusting)
         adjustHeight();
 }
@@ -164,6 +201,13 @@ void FT_FunctionItem::adjustHeight()
         .arg(m_group ? m_group->sizeHint().height() : -1)
         .arg(m_group ? m_group->height() : -1)
         .arg(titleMinH).arg(contentH).arg(itemH));
+
+    // 高度没变化时直接返回。窗口横向拉伸/最大化还原会连续产生大量 resize,
+    // 若每次都 setFixedHeight+updateGeometry+setSizeHint,会反向触发布局并互相反复触发,明显卡顿。
+    if (itemH == m_cachedHeight && height() == itemH) {
+        m_adjusting = false;
+        return;
+    }
 
     m_cachedHeight = itemH;
     setFixedHeight(itemH);

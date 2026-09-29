@@ -50,6 +50,10 @@ public:
 
     FtGroupHit hitTest(const QPoint& pos) const;
 
+    // 请求一次延迟的行宽/行高同步(内部有 pending 合并,可放心重复调用)。
+    // 供外层 FT_FunctionItem 在自己宽度变化时通知使用。
+    void scheduleNotifyResize();
+
 signals:
     void contentChanged();
     void structureChanged();
@@ -58,7 +62,6 @@ signals:
     void nodeDroppedAt(int nodeType, int index, bool hardBreak);
     void commandDroppedAt(const QByteArray& payload, int index, bool hardBreak);
     void requestInsertStepAfter();
-    void requestMergeWithNext();
 
 protected:
     void startDrag(Qt::DropActions supportedActions) override;
@@ -68,6 +71,7 @@ protected:
     void dropEvent(QDropEvent* event) override;
     QStringList mimeTypes() const override;
     void contextMenuEvent(QContextMenuEvent* event) override;
+    bool viewportEvent(QEvent* event) override;
     void paintEvent(QPaintEvent* event) override;
     void resizeEvent(QResizeEvent* event) override;
     void showEvent(QShowEvent* event) override;
@@ -82,7 +86,6 @@ private:
     void syncItemHeight(FT_Function* f);
     void syncAllItemHeights();
     void makeSelectionExclusive();
-    void scheduleNotifyResize();
     void refreshMenuStates();
     QListWidgetItem* newRowItem(FT_Function* f);
     void removeRowInternal(int row);

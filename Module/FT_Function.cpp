@@ -185,11 +185,7 @@ void FT_Function::showCommandMenu(const QPoint& globalPos)
         style()->standardIcon(QStyle::SP_FileDialogDetailedView),
         tr("Response Advance..."));
     menu.addSeparator();
-    QAction* wrap = menu.addAction(tr("Wrap to New Line"));
-    QAction* unwrap = menu.addAction(tr("Join Previous Line"));
     QAction* split = menu.addAction(tr("Split into New Step"));
-    wrap->setEnabled(m_menuState.canWrap);
-    unwrap->setEnabled(m_menuState.canUnwrap);
     split->setEnabled(m_menuState.canSplitStep);
     menu.addSeparator();
     QAction* up = menu.addAction(
@@ -216,10 +212,6 @@ void FT_Function::showCommandMenu(const QPoint& globalPos)
         emit requestInsertAfter(QString::fromLatin1(kFtTypeIicWriteRead));
     else if (chosen == advance)
         openResponseAdvance();
-    else if (chosen == wrap)
-        emit requestWrap();
-    else if (chosen == unwrap)
-        emit requestUnwrap();
     else if (chosen == split)
         emit requestSplitNewStep();
     else if (chosen == up)

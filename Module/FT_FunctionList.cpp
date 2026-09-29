@@ -14,6 +14,25 @@
 #include <QPaintEvent>
 #include <QDrag>
 #include <QPixmap>
+#include <QResizeEvent>
+#include <QTimer>
+
+// 本控件是各个 step(FT_FunctionItem) 的宿主。QListView 会把 item 矩形缓存下来,
+// 列表自身尺寸变化时并不保证重新计算 item 矩形:窗口最大化后还原时,
+// 各 step 的行控件仍停留在最大化时的宽度,它内部的命令组也跟着保持旧宽度,
+// 于是右侧被裁掉(手动拖一下窗口能好,就是因为那次触发了重排)。
+// 所以宽度变化时强制重算一次 item 矩形,让 itemWidget 拿到正确宽度,
+// 继而触发 FT_FunctionItem::resizeEvent → 组内行宽重新同步。
+void FT_FunctionList::resizeEvent(QResizeEvent* event)
+{
+    QListWidget::resizeEvent(event);
+
+    if (event->oldSize().width() != event->size().width()) {
+        doItemsLayout();
+        // itemWidget 的最终落位可能由视图在稍后的几何更新里完成,再补一次确保生效
+        QTimer::singleShot(0, this, [this]() { doItemsLayout(); });
+    }
+}
 
 FtDropIndicator::FtDropIndicator(QWidget* parent)
     : QWidget(parent)

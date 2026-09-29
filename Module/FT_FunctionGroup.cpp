@@ -18,6 +18,7 @@
 #include <QMouseEvent>
 #include <QResizeEvent>
 #include <QShowEvent>
+#include <QStyle>
 #include <QTimer>
 
 static QPointer<QWidget> s_commandDragGroup;
@@ -249,7 +250,14 @@ QSize FT_FunctionGroup::sizeHint() const
     else
         totalH = qMax(totalH, kGroupMinH);
 
-    return QSize(qMax(QListWidget::sizeHint().width(), kGroupMinWidth), totalH);
+    // 宽度只报最小宽度,绝不能返回 QListWidget::sizeHint().width()。
+    // 那是"内容宽度",而内容宽度本身是由 viewport()->width() 算出来再写进
+    // item->setSizeHint() 的;两者互相引用会形成正反馈:
+    //   minimumSizeHint().width() ≈ 当前宽度 + 边框/滚动条余量 > 当前宽度
+    //   → 父布局下一次必须再给它更宽 → 一路涨到超出步骤行,右侧就被裁掉
+    // (而且这个尺寸会"粘住",只有重新布局才缓解,所以看起来像"改一下窗口就好了")。
+    // 本控件的实际宽度由父布局(FT_FunctionItem 中 stretch=1)拉伸决定,这里只给下限。
+    return QSize(kGroupMinWidth, totalH);
 }
 
 QSize FT_FunctionGroup::minimumSizeHint() const
@@ -553,7 +561,8 @@ void FT_FunctionGroup::syncItemHeight(FT_Function* f)
     FT_LOG("FG.syncItemHeight", QString("idx=%1 viewportW=%2 groupW=%3 cellW=%4 rowW=%5")
         .arg(idx).arg(viewport()->width()).arg(width()).arg(cellW).arg(rowW));
     if (w > 0) {
-        f->setFixedWidth(rowW);
+        // 同 syncAllItemHeights:只设上限,让视图随时能按新的 item 矩形把宽度缩回去
+        f->setMaximumWidth(rowW);
         f->layout()->invalidate();
         f->layout()->activate();
         f->refreshChildHeights();
@@ -573,6 +582,7 @@ void FT_FunctionGroup::syncAllItemHeights()
     FT_LOG("FG.syncAll", QString("count=%1 viewportW=%2 groupW=%3 usingW=%4")
         .arg(n).arg(viewport()->width()).arg(width()).arg(w));
     if (w <= 0) return;
+
     const int cellW = qMax(1, w - 2 * kGroupRowSpacing);
     const int rowW  = qMax(1, cellW - 2 * kGroupItemInset);
 
@@ -580,7 +590,11 @@ void FT_FunctionGroup::syncAllItemHeights()
     for (int i = 0; i < n; ++i) {
         FT_Function* f = qobject_cast<FT_Function*>(itemWidget(QListWidget::item(i)));
         if (!f) continue;
-        f->setFixedWidth(rowW);
+        // 用 setMaximumWidth 而不是 setFixedWidth:行控件是挂在视口下的,
+        // 宽度由视图按 item 矩形设置。setFixedWidth 会把 min=max 都钉死,
+        // 一旦某次同步读到了偏大的宽度,视图就再也无法把它改窄 → 右侧被裁。
+        // 只设上限则任何时候视图都能按新矩形把它缩回去,不会"卡住"。
+        f->setMaximumWidth(rowW);
         f->layout()->invalidate();
         f->layout()->activate();
         f->refreshChildHeights();
@@ -588,8 +602,8 @@ void FT_FunctionGroup::syncAllItemHeights()
         f->resize(rowW, h);
         QListWidget::item(i)->setSizeHint(QSize(cellW, h + 2 * kGroupItemInset));
         totalItemH += h + 2 * kGroupItemInset;
-        FT_LOG("FG.syncAll", QString("  [%1] f->sizeHint().h=%2 item.sizeHint.h=%3")
-            .arg(i).arg(f->sizeHint().height()).arg(h + 2 * kGroupItemInset));
+        FT_LOG("FG.syncAll", QString("  [%1] f->w=%2 maxW=%3 sizeHint.h=%4 item.sizeHint.h=%5")
+            .arg(i).arg(f->width()).arg(rowW).arg(f->sizeHint().height()).arg(h + 2 * kGroupItemInset));
     }
     const int spacingTotal = 2 * kGroupRowSpacing * n;
     const int qlistSH = QListWidget::sizeHint().height();
@@ -618,13 +632,32 @@ void FT_FunctionGroup::scheduleNotifyResize()
     });
 }
 
+bool FT_FunctionGroup::viewportEvent(QEvent* event)
+{
+    const bool handled = QListWidget::viewportEvent(event);
+
+    // 行控件的宽度是按 viewport()->width() 算出来的,但视口自身的缩放
+    // 不会走到 FT_FunctionGroup::resizeEvent(那只是本控件自己的尺寸变化)。
+    // 最大化→还原时,视口会在本控件 resize 之后才落到最终宽度;
+    // 若只靠 resizeEvent 触发,这个最终宽度就永远没有同步机会,
+    // 行控件会停在旧(更宽)的 setFixedWidth 上,右侧被裁掉。
+    // 视口的 Resize 事件到达时其宽度已是新值,直接在这里同步。
+    if (event->type() == QEvent::Resize)
+        syncAllItemHeights();
+
+    return handled;
+}
+
 void FT_FunctionGroup::resizeEvent(QResizeEvent* event)
 {
     QListWidget::resizeEvent(event);
     FT_LOG("FG.resizeEvent", QString("oldW=%1 newW=%2 oldH=%3 newH=%4")
         .arg(event->oldSize().width()).arg(event->size().width())
         .arg(event->oldSize().height()).arg(event->size().height()));
-    syncAllItemHeights();
+    // 这里不能直接 syncAllItemHeights():本控件的 resizeEvent 早于视口重排,
+    // 此刻 viewport()->width() 还是旧值,按它同步会把行控件设成旧的宽度
+    // (最大化后还原时右侧就被裁掉)。统一走延迟同步,那时宽度已正确,
+    // 且连续 resize 会被 scheduleNotifyResize 的 pending 标记合并成一次。
     scheduleNotifyResize();
 }
 
@@ -683,10 +716,6 @@ void FT_FunctionGroup::wireFunction(FT_Function* function)
         }
     });
 
-    connect(function, &FT_Function::requestWrap, this, []() {});
-
-    connect(function, &FT_Function::requestUnwrap, this, []() {});
-
     connect(function, &FT_Function::requestSplitNewStep, this, [this, function]() {
         const int idx = indexOfFunction(function);
         if (idx >= 0) emit splitStepRequested(idx);
@@ -722,8 +751,6 @@ void FT_FunctionGroup::refreshMenuStates()
         FT_Function::MenuState state;
         state.canMoveUp    = (i > 0);
         state.canMoveDown  = (i < QListWidget::count() - 1);
-        state.canWrap      = false;
-        state.canUnwrap    = false;
         state.canSplitStep = (i > 0);
         f->setMenuState(state);
     }
@@ -733,65 +760,40 @@ void FT_FunctionGroup::showGroupMenu(const QPoint& globalPos, const QPoint& loca
 {
     Q_UNUSED(localPos);
 
-    QMenu menu;
+    // 组空白区只负责“往这个组里加命令”和“再开一个步骤”。
+    // 单条命令的上移/下移/拆分/删除等条目级操作统一放在命令菜单里(FT_Function::showCommandMenu),
+    // 避免两个入口互相重复、行为又不一致。
+    QMenu menu(this);
 
-    QAction* actAppend = menu.addAction(QStringLiteral("添加 TBox命令"));
-    connect(actAppend, &QAction::triggered, this, [this]() {
-        appendFunction(QStringLiteral("TBoxCommand"));
+    QAction* actAppendTbox = menu.addAction(
+        style()->standardIcon(QStyle::SP_FileIcon),
+        tr("Add TBox Command"));
+    connect(actAppendTbox, &QAction::triggered, this, [this]() {
+        appendFunction(QString::fromLatin1(kFtTypeTbox));
     });
 
-    QAction* actIicW = menu.addAction(QStringLiteral("添加 IIC写"));
-    connect(actIicW, &QAction::triggered, this, [this]() {
-        appendFunction(QStringLiteral("IicWrite"));
+    QAction* actAppendIicW = menu.addAction(
+        style()->standardIcon(QStyle::SP_FileIcon),
+        tr("Add I2C Write"));
+    connect(actAppendIicW, &QAction::triggered, this, [this]() {
+        appendFunction(QString::fromLatin1(kFtTypeIicWrite));
     });
 
-    QAction* actIicWR = menu.addAction(QStringLiteral("添加 IIC写读"));
-    connect(actIicWR, &QAction::triggered, this, [this]() {
-        appendFunction(QStringLiteral("IicWriteRead"));
+    QAction* actAppendIicWR = menu.addAction(
+        style()->standardIcon(QStyle::SP_FileIcon),
+        tr("Add I2C Write+Read"));
+    connect(actAppendIicWR, &QAction::triggered, this, [this]() {
+        appendFunction(QString::fromLatin1(kFtTypeIicWriteRead));
     });
 
     menu.addSeparator();
 
-    FT_Function* currentFunc = functionAt(currentRow());
-    if (currentFunc) {
-        QAction* actInsert = menu.addAction(QStringLiteral("向前插入"));
-        connect(actInsert, &QAction::triggered, this, [this]() {
-            const int idx = currentRow();
-            if (idx >= 0)
-                insertFunction(QStringLiteral("TBoxCommand"), idx, false);
-        });
-
-        QAction* actRemove = menu.addAction(QStringLiteral("删除"));
-        connect(actRemove, &QAction::triggered, this, [this]() {
-            removeFunctionAt(currentRow());
-        });
-
-        menu.addSeparator();
-
-        QAction* actSplit = menu.addAction(QStringLiteral("拆分为新步骤"));
-        connect(actSplit, &QAction::triggered, this, [this]() {
-            const int idx = currentRow();
-            if (idx >= 0) emit splitStepRequested(idx);
-        });
-
-        QAction* actInsertAfter = menu.addAction(QStringLiteral("在后插入数据录入"));
-        connect(actInsertAfter, &QAction::triggered, this, [this]() {
-            const int idx = currentRow() + 1;
-            insertFunction(QString::fromLatin1(kFtTypeTbox), idx, false);
-        });
-
-        menu.addSeparator();
-
-        QAction* actMergeWithNext = menu.addAction(QStringLiteral("与下一步骤合并"));
-        connect(actMergeWithNext, &QAction::triggered, this, [this]() {
-            emit requestMergeWithNext();
-        });
-    } else {
-        QAction* actNewStep = menu.addAction(QStringLiteral("新增步骤"));
-        connect(actNewStep, &QAction::triggered, this, [this]() {
-            emit requestInsertStepAfter();
-        });
-    }
+    QAction* actNewStep = menu.addAction(
+        style()->standardIcon(QStyle::SP_FileDialogNewFolder),
+        tr("New Empty Step After"));
+    connect(actNewStep, &QAction::triggered, this, [this]() {
+        emit requestInsertStepAfter();
+    });
 
     menu.exec(globalPos);
 }

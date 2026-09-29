@@ -31,6 +31,7 @@ signals:
 
 protected:
     void startDrag(Qt::DropActions supportedActions) override;
+    void resizeEvent(QResizeEvent* event) override;
     void dragEnterEvent(QDragEnterEvent* event) override;
     void dragMoveEvent(QDragMoveEvent* event) override;
     void dragLeaveEvent(QDragLeaveEvent* event) override;

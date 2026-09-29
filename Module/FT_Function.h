@@ -40,8 +40,6 @@ public:
     {
         bool canMoveUp    = false;
         bool canMoveDown  = false;
-        bool canWrap      = false; // 可在此命令前插入硬换行
-        bool canUnwrap    = false; // 可与上一条硬换行合并
         bool canSplitStep = false; // 可从此命令拆成新 Step(其前还有命令)
     };
     void setMenuState(const MenuState& state) { m_menuState = state; }
@@ -52,8 +50,6 @@ signals:
     void requestResize();
     void requestMoveUp();
     void requestMoveDown();
-    void requestWrap();
-    void requestUnwrap();
     void requestSplitNewStep();
     // 在本命令之后(同一视觉行)插入一条指定类型的新命令
     void requestInsertAfter(const QString& typeName);

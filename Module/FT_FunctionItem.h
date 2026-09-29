@@ -37,6 +37,9 @@ signals:
     void splitStepRequested(int flat);
 
 private:
+    // 本步骤在外层步骤列表中的行号(-1 = 不在列表中);outCount 返回列表总行数。
+    int stepRow(int* outCount);
+
     QCheckBox*          m_enableCheck  = nullptr;
     FHintTextEdit*      m_titleEdit    = nullptr;
     FT_FunctionGroup*   m_group        = nullptr;
