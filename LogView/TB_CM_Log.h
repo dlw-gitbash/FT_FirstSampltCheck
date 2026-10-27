@@ -1,8 +1,15 @@
 #pragma once
 
-inline constexpr int L_TRACE = 0;
-inline constexpr int L_DEBUG = 1;
-inline constexpr int L_INFO = 2;
-inline constexpr int L_WARN = 3;
-inline constexpr int L_ERROR = 4;
-inline constexpr int L_CRITICAL = 5;
+namespace LogLevel
+{
+enum Level : int
+{
+    Trace = 0,
+    Debug = 1,
+    Info = 2,
+    Warn = 3,
+    Error = 4,
+    Critical = 5,
+    Count = 6
+};
+}

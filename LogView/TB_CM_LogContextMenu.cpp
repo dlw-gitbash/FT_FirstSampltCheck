@@ -1,4 +1,4 @@
-﻿#include "TB_CM_LogContextMenu.h"
+#include "TB_CM_LogContextMenu.h"
 
 #include <QAction>
 #include <QKeySequence>

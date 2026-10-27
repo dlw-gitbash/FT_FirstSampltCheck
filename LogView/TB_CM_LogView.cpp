@@ -1,4 +1,4 @@
-﻿#include "TB_CM_LogView.h"
+#include "TB_CM_LogView.h"
 
 #include "TB_CM_LogContextMenu.h"
 #include "TB_CM_LogSearch.h"
@@ -6,10 +6,7 @@
 #include <QPlainTextEdit>
 #include <QTextDocument>
 #include <QTextCursor>
-#include <QTextBlock>
 #include <QTextOption>
-#include <QTextEdit>
-#include <QTextFormat>
 #include <QScrollBar>
 #include <QPushButton>
 #include <QLineEdit>
@@ -26,50 +23,72 @@
 #include <QThread>
 #include <QMetaObject>
 #include <QSignalBlocker>
+#include <QElapsedTimer>
 
-#if defined(_MSC_VER) && (_MSC_VER >= 1600)
-#pragma execution_character_set("utf-8")
-#endif
+#include <algorithm>
+#include <utility>
 
 namespace
 {
 constexpr int kMaxBatchPerFlush = 500;
-QLatin1String levelName(int level)
+constexpr int kFlushBudgetMs = 50;
+
+const QString &levelPrefixFor(int level)
 {
-    switch (level)
-    {
-    case L_TRACE:
-        return QLatin1String("TRACE");
-    case L_DEBUG:
-        return QLatin1String("DEBUG");
-    case L_INFO:
-        return QLatin1String("INFO");
-    case L_WARN:
-        return QLatin1String("WARN");
-    case L_ERROR:
-        return QLatin1String("ERROR");
-    case L_CRITICAL:
-        return QLatin1String("CRITICAL");
-    default:
-        return QLatin1String("INFO");
-    }
+    static const QString prefixes[LogLevel::Count] = {
+        QStringLiteral(" - TRACE | "),
+        QStringLiteral(" - DEBUG | "),
+        QStringLiteral(" - INFO | "),
+        QStringLiteral(" - WARN | "),
+        QStringLiteral(" - ERROR | "),
+        QStringLiteral(" - CRITICAL | ")
+    };
+    if (level < LogLevel::Trace || level >= LogLevel::Count)
+        level = LogLevel::Info;
+    return prefixes[level];
 }
+
 QString formatLogLine(quint64 timestampMs, int level, const QString &message)
 {
-    const qint64 ts = (timestampMs != 0) ? static_cast<qint64>(timestampMs)
-                                         : QDateTime::currentMSecsSinceEpoch();
-    QString body = message;
-    if (body.contains(QLatin1Char('\r')))
-        body.replace(QLatin1Char('\r'), QLatin1Char('\n'));
-    if (body.contains(QLatin1Char('\n')))
-        body.replace(QLatin1Char('\n'), QChar(0x23CE));
+    const qint64 rawTs = (timestampMs != 0) ? static_cast<qint64>(timestampMs)
+                                            : QDateTime::currentMSecsSinceEpoch();
+    const qint64 ts = (rawTs > 0) ? rawTs : QDateTime::currentMSecsSinceEpoch();
+
+    const QString *body = &message;
+    QString flattened;
+    if (message.contains(QLatin1Char('\r')) || message.contains(QLatin1Char('\n')))
+    {
+        flattened = message;
+        flattened.replace(QStringLiteral("\r\n"), QStringLiteral(" "));
+        flattened.replace(QLatin1Char('\r'), QLatin1Char(' '));
+        flattened.replace(QLatin1Char('\n'), QLatin1Char(' '));
+        body = &flattened;
+    }
+
+    const qint64 second = ts / 1000;
+    const int msec = static_cast<int>(ts % 1000);
+    thread_local qint64 cachedSecond = -1;
+    thread_local QString cachedPrefix;
+    if (second != cachedSecond)
+    {
+        cachedSecond = second;
+        cachedPrefix = QDateTime::fromMSecsSinceEpoch(second * 1000)
+                           .toString(QStringLiteral("yyyy-MM-dd HH:mm:ss"));
+    }
+
+    const QString &levelPrefix = levelPrefixFor(level);
+
     QString line;
-    line.reserve(32 + body.size());
-    line += QDateTime::fromMSecsSinceEpoch(ts).toString(QStringLiteral("yyyy-MM-dd HH:mm:ss.zzz"));
-    line += QLatin1String(" - ");
-    line += levelName(level);
-    line += QLatin1String(" | ");
-    line += body;
+    line.reserve(cachedPrefix.size() + 4 + levelPrefix.size() + body->size());
+    line += cachedPrefix;
+    line += QLatin1Char('.');
+    QChar millis[3];
+    millis[0] = QChar(static_cast<ushort>('0' + msec / 100));
+    millis[1] = QChar(static_cast<ushort>('0' + (msec / 10) % 10));
+    millis[2] = QChar(static_cast<ushort>('0' + msec % 10));
+    line.append(millis, 3);
+    line += levelPrefix;
+    line += *body;
     return line;
 }
 }
@@ -96,8 +115,8 @@ TB_CM_LogView::TB_CM_LogView(QWidget *parent)
       m_flushNow(false)
 {
     qRegisterMetaType<TB_CM_LogEntry>("TB_CM_LogEntry");
-    qRegisterMetaType<E_OverflowPolicy>("E_OverflowPolicy");
-    const QColor levelColors[6] = {
+
+    const QColor levelColors[LogLevel::Count] = {
         QColor(0x80, 0x80, 0x80),
         QColor(0x00, 0x00, 0xff),
         QColor(0x00, 0x00, 0x00),
@@ -105,8 +124,9 @@ TB_CM_LogView::TB_CM_LogView(QWidget *parent)
         QColor(0xff, 0x00, 0x00),
         QColor(0xcc, 0x00, 0x66)
     };
-    for (int i = 0; i < 6; ++i)
+    for (int i = 0; i < LogLevel::Count; ++i)
         m_levelFormats[i].setForeground(levelColors[i]);
+
     initFilterBar();
     initView();
     initContextMenu();
@@ -143,6 +163,7 @@ void TB_CM_LogView::initFilterBar()
         if (bottomIcon.isNull() && style())
             bottomIcon = style()->standardIcon(QStyle::SP_ArrowDown);
         m_floatNewLogBtn->setIcon(bottomIcon);
+        m_floatNewLogBtn->setIconSize(QSize(14, 14));
     }
     m_floatNewLogBtn->setCursor(Qt::PointingHandCursor);
     m_floatNewLogBtn->setFocusPolicy(Qt::NoFocus);
@@ -209,7 +230,7 @@ void TB_CM_LogView::initView()
     m_edit->setAutoFillBackground(true);
     m_edit->setFrameShape(QFrame::NoFrame);
     m_edit->setCenterOnScroll(false);
-    m_edit->setContextMenuPolicy(Qt::DefaultContextMenu);
+    m_edit->setContextMenuPolicy(Qt::NoContextMenu);
     QPalette palette = m_edit->palette();
     palette.setColor(QPalette::Base, Qt::white);
     palette.setColor(QPalette::Text, QColor(0x1a, 0x1a, 0x1a));
@@ -224,30 +245,35 @@ void TB_CM_LogView::initView()
     m_edit->viewport()->installEventFilter(this);
     m_filterEdit->installEventFilter(this);
     m_search = new TB_CM_LogSearch(m_edit, this);
-    connect(m_search, &TB_CM_LogSearch::scrolledToHit, this, [this]()
-            { m_autoScroll = false; });
     m_mainLayout->addWidget(m_filterBar);
     m_mainLayout->addWidget(m_edit, 1);
 }
 void TB_CM_LogView::initContextMenu()
 {
     m_contextMenu = new TB_CM_LogContextMenu(this);
-    addAction(m_contextMenu->copyAction());
-    addAction(m_contextMenu->selectAllAction());
-    addAction(m_contextMenu->findPrevAction());
-    addAction(m_contextMenu->findNextAction());
-    addAction(m_contextMenu->clearAction());
+    QAction *actions[] = {
+        m_contextMenu->copyAction(),
+        m_contextMenu->selectAllAction(),
+        m_contextMenu->findPrevAction(),
+        m_contextMenu->findNextAction(),
+        m_contextMenu->clearAction()
+    };
+    for (QAction *action : actions)
+    {
+        action->setShortcutContext(Qt::WidgetWithChildrenShortcut);
+        addAction(action);
+    }
 }
 void TB_CM_LogView::showContextMenu(const QPoint &globalPos)
 {
     if (!m_contextMenu)
         return;
-    const bool hasSearch = !m_search->keyword().isEmpty() && m_search->hitCount() > 0;
-    m_contextMenu->popupAt(globalPos, m_edit->textCursor().hasSelection(), hasSearch);
+    const bool hasSelection = m_edit->textCursor().hasSelection();
+    m_contextMenu->popupAt(globalPos, hasSelection, m_search->hitCount() > 0);
 }
 void TB_CM_LogView::onCopyAction()
 {
-    if (m_filterEdit->hasFocus() && m_filterEdit->hasSelectedText())
+    if (m_filterEdit->hasFocus())
     {
         m_filterEdit->copy();
         return;
@@ -275,11 +301,17 @@ void TB_CM_LogView::initConnections()
     connect(m_contextMenu->findPrevAction(), &QAction::triggered, this, &TB_CM_LogView::findPrev);
     connect(m_contextMenu->findNextAction(), &QAction::triggered, this, &TB_CM_LogView::findNext);
     connect(m_contextMenu->clearAction(), &QAction::triggered, this, &TB_CM_LogView::clearLogs);
+
     connect(m_floatNewLogBtn, &QPushButton::clicked, this, [this]()
             {
         m_autoScroll = true;
         scrollToBottom(); });
     connect(m_clearLogsBtn, &QPushButton::clicked, this, &TB_CM_LogView::clearLogs);
+
+    connect(m_search, &TB_CM_LogSearch::scrolledToHit, this, [this]()
+            { m_autoScroll = false; });
+    connect(m_search, &TB_CM_LogSearch::hitsChanged, this, &TB_CM_LogView::searchHitsChanged);
+
     m_searchDebounceTimer = new QTimer(this);
     m_searchDebounceTimer->setSingleShot(true);
     m_searchDebounceTimer->setInterval(200);
@@ -302,123 +334,283 @@ void TB_CM_LogView::appendLog(const TB_CM_LogEntry &entry)
     LogRecord record;
     record.level = entry.level;
     record.line = formatLogLine(entry.timestampMs, entry.level, entry.message);
+
+    int dropped = 0;
     {
         QMutexLocker locker(&m_mutex);
-        if (m_pending.size() >= DEFAULT_PENDING_MAX)
+        if (m_pending.size() >= static_cast<size_t>(DEFAULT_PENDING_MAX))
         {
-            const int dropCount = m_pending.size() - DEFAULT_PENDING_MAX + 1;
-            m_pending.remove(0, dropCount);
-            m_droppedCount.fetch_add(dropCount, std::memory_order_relaxed);
+            m_pending.pop_front();
+            m_droppedCount.fetch_add(1, std::memory_order_relaxed);
+            ++dropped;
         }
-        m_pending.append(std::move(record));
+        m_pending.push_back(std::move(record));
     }
-    if (!m_flushScheduled.exchange(true, std::memory_order_acq_rel))
+    if (dropped > 0)
+        emit logsDropped(dropped);
+    if (!m_flushScheduled.load(std::memory_order_acquire))
     {
         if (QThread::currentThread() == thread())
-            startFlushTimer();
+            scheduleFlush();
         else
-            QMetaObject::invokeMethod(this, &TB_CM_LogView::startFlushTimer, Qt::QueuedConnection);
+            QMetaObject::invokeMethod(this, &TB_CM_LogView::scheduleFlush, Qt::QueuedConnection);
     }
 }
-void TB_CM_LogView::startFlushTimer()
+void TB_CM_LogView::appendLogs(const QVector<TB_CM_LogEntry> &entries)
 {
+    const int count = static_cast<int>(entries.size());
+    if (count == 0)
+        return;
+
+    QVector<LogRecord> prepared;
+    prepared.reserve(count);
+    for (const TB_CM_LogEntry &entry : entries)
+    {
+        LogRecord record;
+        record.level = entry.level;
+        record.line = formatLogLine(entry.timestampMs, entry.level, entry.message);
+        prepared.append(std::move(record));
+    }
+
+    int dropped = 0;
+    {
+        QMutexLocker locker(&m_mutex);
+        for (LogRecord &record : prepared)
+        {
+            if (m_pending.size() >= static_cast<size_t>(DEFAULT_PENDING_MAX))
+            {
+                m_pending.pop_front();
+                m_droppedCount.fetch_add(1, std::memory_order_relaxed);
+                ++dropped;
+            }
+            m_pending.push_back(std::move(record));
+        }
+    }
+
+    if (dropped > 0)
+        emit logsDropped(dropped);
+    if (!m_flushScheduled.load(std::memory_order_acquire))
+    {
+        if (QThread::currentThread() == thread())
+            scheduleFlush();
+        else
+            QMetaObject::invokeMethod(this, &TB_CM_LogView::scheduleFlush, Qt::QueuedConnection);
+    }
+}
+void TB_CM_LogView::scheduleFlush()
+{
+    m_flushScheduled.store(true, std::memory_order_release);
     if (m_flushTimer->isActive())
         return;
     const int delay = m_flushNow ? 0 : m_flushIntervalMs;
     m_flushNow = false;
     m_flushTimer->start(delay);
 }
+void TB_CM_LogView::flushNow()
+{
+    if (QThread::currentThread() != thread())
+    {
+        QMetaObject::invokeMethod(this, &TB_CM_LogView::flushNow, Qt::QueuedConnection);
+        return;
+    }
+    if (m_flushTimer)
+        m_flushTimer->stop();
+    m_flushScheduled.store(false, std::memory_order_release);
+
+    QElapsedTimer budget;
+    budget.start();
+    for (;;)
+    {
+        QVector<LogRecord> batch;
+        size_t backlog = 0;
+        if (!takeBatch(batch, backlog))
+            break;
+        applyPending(batch);
+        if (budget.elapsed() >= kFlushBudgetMs)
+            break;
+    }
+
+    bool empty = false;
+    {
+        QMutexLocker locker(&m_mutex);
+        empty = m_pending.empty();
+    }
+    if (!empty)
+    {
+        m_flushNow = true;
+        scheduleFlush();
+    }
+}
+bool TB_CM_LogView::takeBatch(QVector<LogRecord> &batch, size_t &backlog)
+{
+    QMutexLocker locker(&m_mutex);
+    const size_t pendingCount = m_pending.size();
+    if (pendingCount == 0)
+        return false;
+
+    const size_t take = std::min(pendingCount, static_cast<size_t>(kMaxBatchPerFlush));
+    batch.reserve(static_cast<int>(take));
+    for (size_t i = 0; i < take; ++i)
+    {
+        batch.append(std::move(m_pending.front()));
+        m_pending.pop_front();
+    }
+    backlog = m_pending.size();
+    return true;
+}
 void TB_CM_LogView::flushPending()
 {
     m_flushScheduled.store(false, std::memory_order_release);
+
     QVector<LogRecord> batch;
-    int backlog = 0;
-    {
-        QMutexLocker locker(&m_mutex);
-        const int pendingCount = m_pending.size();
-        if (pendingCount == 0)
-            return;
-        const int take = qMin(pendingCount, kMaxBatchPerFlush);
-        batch.reserve(take);
-        for (int i = 0; i < take; ++i)
-            batch.append(std::move(m_pending[i]));
-        m_pending.remove(0, take);
-        backlog = m_pending.size();
-    }
-    applyPending(batch);
-    if (backlog > 0 && !m_flushScheduled.exchange(true, std::memory_order_acq_rel))
+    size_t backlog = 0;
+    if (!takeBatch(batch, backlog))
+        return;
+
+    QElapsedTimer timer;
+    timer.start();
+    const int inserted = applyPending(batch);
+    emit flushTimed(inserted, timer.nsecsElapsed());
+
+    if (backlog > 0)
     {
         m_flushNow = true;
-        startFlushTimer();
+        scheduleFlush();
     }
 }
-void TB_CM_LogView::applyPending(const QVector<LogRecord> &batch)
+int TB_CM_LogView::applyPending(const QVector<LogRecord> &batch)
 {
-    if (batch.isEmpty())
-        return;
+    const int batchSize = static_cast<int>(batch.size());
+    if (batchSize == 0)
+        return 0;
+
     const bool stayAtBottom = m_autoScroll;
-    if (m_overflowPolicy == OP_CLEAR_ALL && m_records.size() + batch.size() > m_maxLogs)
+
+    if (m_overflowPolicy == OP_CLEAR_ALL
+        && static_cast<int>(m_records.size()) + batchSize > m_maxLogs)
     {
+        const int from = qMax(0, batchSize - m_maxLogs);
         m_records.clear();
+        for (int i = from; i < batchSize; ++i)
+            m_records.push_back(batch.at(i));
+
         m_edit->clear();
-        m_edit->setMaximumBlockCount(m_maxLogs);
-        const int from = qMax(0, batch.size() - m_maxLogs);
-        m_records.reserve(batch.size() - from);
-        for (int i = from; i < batch.size(); ++i)
-            m_records.append(batch.at(i));
-        insertRecords(batch, from, batch.size());
-        m_search->invalidate();
+        m_search->beginRebuild();
+        const int inserted = insertLines(batch, from, batchSize);
+        m_search->endBatch();
+
         if (stayAtBottom)
             scrollToBottom();
-        emit logAppended(batch.size() - from);
-        return;
+        emit logAppended(inserted);
+        return inserted;
     }
-    m_records.reserve(m_records.size() + batch.size());
+
     for (const LogRecord &record : batch)
-        m_records.append(record);
-    const int overflow = m_records.size() - m_maxLogs;
-    if (overflow > 0)
-        m_records.remove(0, overflow);
-    insertRecords(batch, 0, batch.size());
-    m_search->invalidate();
+        m_records.push_back(record);
+    while (static_cast<int>(m_records.size()) > m_maxLogs)
+        m_records.pop_front();
+
+    m_search->beginInsert();
+    const int inserted = insertLines(batch, 0, batchSize);
+    m_search->endBatch();
+
     if (stayAtBottom)
         scrollToBottom();
-    emit logAppended(batch.size());
+    emit logAppended(inserted);
+    return inserted;
 }
-void TB_CM_LogView::insertRecords(const QVector<LogRecord> &records, int from, int to)
+int TB_CM_LogView::insertLines(const QVector<LogRecord> &records, int from, int to)
 {
+    const int total = static_cast<int>(records.size());
+    if (from < 0)
+        from = 0;
+    if (to > total)
+        to = total;
     if (from >= to)
-        return;
-    QTextDocument *document = m_edit->document();
-    QTextCursor cursor(document);
-    cursor.movePosition(QTextCursor::End);
+        return 0;
+
     const bool hasFilter = !m_filterKeyword.isEmpty();
-    bool needNewBlock = !document->isEmpty();
-    cursor.beginEditBlock();
+    const QString &filter = m_filterKeyword;
+
+    QVector<int> visible;
+    visible.reserve(to - from);
     for (int i = from; i < to; ++i)
     {
-        const LogRecord &record = records.at(i);
-        if (hasFilter && record.line.indexOf(m_filterKeyword, 0, Qt::CaseInsensitive) < 0)
+        if (hasFilter && records.at(i).line.indexOf(filter, 0, Qt::CaseInsensitive) < 0)
             continue;
-        if (needNewBlock)
-            cursor.insertBlock();
-        cursor.insertText(record.line, levelFormat(record.level));
-        needNewBlock = true;
+        visible.append(i);
+    }
+    const int count = static_cast<int>(visible.size());
+    if (count == 0)
+        return 0;
+
+    QPlainTextEdit *edit = m_edit;
+    const bool docWasEmpty = edit->document()->isEmpty();
+
+    QTextCursor cursor(edit->document());
+    cursor.movePosition(QTextCursor::End);
+
+    bool firstChunk = true;
+    cursor.beginEditBlock();
+    int k = 0;
+    while (k < count)
+    {
+        const int level = records.at(visible.at(k)).level;
+        int end = k + 1;
+        while (end < count && records.at(visible.at(end)).level == level)
+            ++end;
+
+        QString chunk;
+        qsizetype needed = static_cast<qsizetype>(end - k);
+        for (int t = k; t < end; ++t)
+            needed += records.at(visible.at(t)).line.size();
+        chunk.reserve(needed + 1);
+
+        for (int t = k; t < end; ++t)
+        {
+            const QString &line = records.at(visible.at(t)).line;
+            if (t > k)
+                chunk += QLatin1Char('\n');
+            chunk += line;
+            m_search->onLineInserted(line);
+        }
+        if (!docWasEmpty || !firstChunk)
+            chunk.prepend(QLatin1Char('\n'));
+        firstChunk = false;
+
+        cursor.insertText(chunk, levelFormat(level));
+        k = end;
     }
     cursor.endEditBlock();
+
+    return count;
 }
 void TB_CM_LogView::rebuildDocument()
 {
+    const bool stayAtBottom = m_autoScroll;
+
     m_edit->setUpdatesEnabled(false);
+
     m_edit->clear();
-    m_edit->setMaximumBlockCount(m_maxLogs);
-    insertRecords(m_records, 0, m_records.size());
+    m_search->beginRebuild();
+    m_search->setKeyword(m_filterKeyword);
+
+    if (!m_records.empty())
+    {
+        QVector<LogRecord> snapshot;
+        snapshot.reserve(static_cast<int>(m_records.size()));
+        for (const LogRecord &record : m_records)
+            snapshot.append(record);
+        insertLines(snapshot, 0, static_cast<int>(snapshot.size()));
+    }
+    m_search->endBatch();
+
     m_edit->setUpdatesEnabled(true);
     m_edit->viewport()->update();
-    m_search->invalidate();
-    m_search->clearSelection();
-    m_autoScroll = true;
-    scrollToBottom();
+
+    m_autoScroll = stayAtBottom;
+    if (stayAtBottom)
+        scrollToBottom();
 }
 void TB_CM_LogView::setFilterKeyword(const QString &keyword)
 {
@@ -428,8 +620,11 @@ void TB_CM_LogView::setFilterKeyword(const QString &keyword)
                                   { setFilterKeyword(keyword); }, Qt::QueuedConnection);
         return;
     }
-    if (QSignalBlocker blocker(m_filterEdit); m_filterEdit->text() != keyword)
+    if (m_filterEdit->text() != keyword)
+    {
+        QSignalBlocker blocker(m_filterEdit);
         m_filterEdit->setText(keyword);
+    }
     m_searchDebounceTimer->stop();
     applyFilterAndSearch(keyword);
 }
@@ -440,25 +635,42 @@ QString TB_CM_LogView::filterKeyword() const
 void TB_CM_LogView::applyFilterAndSearch(const QString &keyword)
 {
     const QString trimmed = keyword.trimmed();
-    const bool filterChanged = (trimmed != m_filterKeyword);
-    m_filterKeyword = trimmed;
-    if (filterChanged)
+    if (trimmed != m_filterKeyword)
+    {
+        m_filterKeyword = trimmed;
         rebuildDocument();
+        return;
+    }
     m_search->setKeyword(trimmed);
-    emit searchHitsChanged(m_search->hitCount());
 }
 void TB_CM_LogView::search(const QString &keyword)
 {
+    if (QThread::currentThread() != thread())
+    {
+        QMetaObject::invokeMethod(this, [this, keyword]()
+                                  { search(keyword); }, Qt::QueuedConnection);
+        return;
+    }
     setFilterKeyword(keyword);
     if (!keyword.trimmed().isEmpty())
         m_search->findNext();
 }
 void TB_CM_LogView::findNext()
 {
+    if (QThread::currentThread() != thread())
+    {
+        QMetaObject::invokeMethod(this, &TB_CM_LogView::findNext, Qt::QueuedConnection);
+        return;
+    }
     m_search->findNext();
 }
 void TB_CM_LogView::findPrev()
 {
+    if (QThread::currentThread() != thread())
+    {
+        QMetaObject::invokeMethod(this, &TB_CM_LogView::findPrev, Qt::QueuedConnection);
+        return;
+    }
     m_search->findPrev();
 }
 QString TB_CM_LogView::searchKeyword() const
@@ -472,17 +684,19 @@ int TB_CM_LogView::searchHitCount() const
 void TB_CM_LogView::onSearchReturnPressed()
 {
     m_searchDebounceTimer->stop();
-    const QString trimmed = m_filterEdit->text().trimmed();
-    if (trimmed != m_filterKeyword || trimmed != m_search->keyword())
-        applyFilterAndSearch(m_filterEdit->text());
-    else
-        findNext();
+    const QString keyword = m_filterEdit->text();
+    if (keyword.trimmed() != m_filterKeyword)
+        applyFilterAndSearch(keyword);
+    findNext();
 }
 void TB_CM_LogView::scrollToBottom()
 {
     m_autoScroll = true;
-    m_edit->moveCursor(QTextCursor::End);
-    m_edit->ensureCursorVisible();
+    if (!m_edit->textCursor().hasSelection())
+    {
+        m_edit->moveCursor(QTextCursor::End);
+        m_edit->ensureCursorVisible();
+    }
     QScrollBar *bar = m_edit->verticalScrollBar();
     bar->setValue(bar->maximum());
 }
@@ -507,13 +721,18 @@ void TB_CM_LogView::setMaxLogsImpl(int maxLogs)
         maxLogs = 100;
     if (m_maxLogs == maxLogs)
         return;
+
     m_maxLogs = maxLogs;
     m_edit->setMaximumBlockCount(m_maxLogs);
-    if (m_records.size() > m_maxLogs)
+
+    bool trimmed = false;
+    while (static_cast<int>(m_records.size()) > m_maxLogs)
     {
-        m_records.remove(0, m_records.size() - m_maxLogs);
-        rebuildDocument();
+        m_records.pop_front();
+        trimmed = true;
     }
+    if (trimmed)
+        rebuildDocument();
 }
 int TB_CM_LogView::maxLogs() const
 {
@@ -529,7 +748,7 @@ void TB_CM_LogView::setOverflowPolicy(E_OverflowPolicy policy)
     }
     m_overflowPolicy = policy;
 }
-E_OverflowPolicy TB_CM_LogView::overflowPolicy() const
+TB_CM_LogView::E_OverflowPolicy TB_CM_LogView::overflowPolicy() const
 {
     return m_overflowPolicy;
 }
@@ -547,11 +766,9 @@ void TB_CM_LogView::clearLogs()
     }
     m_records.clear();
     m_edit->clear();
-    m_edit->setMaximumBlockCount(m_maxLogs);
-    m_search->clearHits();
-    m_search->clearSelection();
+    m_search->beginRebuild();
+    m_search->endBatch();
     m_autoScroll = true;
-    emit searchHitsChanged(0);
     emit logsCleared();
 }
 qint64 TB_CM_LogView::droppedCount() const
@@ -578,39 +795,35 @@ int TB_CM_LogView::flushInterval() const
 {
     return m_flushIntervalMs;
 }
-QPlainTextEdit *TB_CM_LogView::textEdit() const
+const QPlainTextEdit *TB_CM_LogView::textEdit() const
 {
     return m_edit;
 }
 QTextCharFormat TB_CM_LogView::levelFormat(int level) const
 {
-    if (level < 0 || level > 5)
-        level = L_INFO;
+    if (level < LogLevel::Trace || level >= LogLevel::Count)
+        level = LogLevel::Info;
     return m_levelFormats[level];
 }
 QString TB_CM_LogView::levelToString(int level)
 {
     switch (level)
     {
-    case L_INFO:
+    case LogLevel::Info:
         return tr("INFO");
-    case L_DEBUG:
+    case LogLevel::Debug:
         return tr("DEBUG");
-    case L_WARN:
+    case LogLevel::Warn:
         return tr("WARN");
-    case L_ERROR:
+    case LogLevel::Error:
         return tr("ERROR");
-    case L_TRACE:
+    case LogLevel::Trace:
         return tr("TRACE");
-    case L_CRITICAL:
+    case LogLevel::Critical:
         return tr("CRITICAL");
     default:
         return tr("UNKNOWN");
     }
-}
-QString TB_CM_LogView::nowTimestamp()
-{
-    return QDateTime::currentDateTime().toString("yyyy-MM-dd HH:mm:ss.zzz");
 }
 bool TB_CM_LogView::eventFilter(QObject *watched, QEvent *event)
 {
@@ -622,14 +835,6 @@ bool TB_CM_LogView::eventFilter(QObject *watched, QEvent *event)
     if (event->type() == QEvent::KeyPress)
     {
         QKeyEvent *ke = static_cast<QKeyEvent *>(event);
-        if (ke->key() == Qt::Key_F3)
-        {
-            if (ke->modifiers() & Qt::ShiftModifier)
-                findPrev();
-            else
-                findNext();
-            return true;
-        }
         if (watched == m_filterEdit && ke->modifiers() == Qt::ShiftModifier &&
             (ke->key() == Qt::Key_Return || ke->key() == Qt::Key_Enter))
         {
