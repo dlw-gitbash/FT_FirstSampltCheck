@@ -9,7 +9,8 @@ LogFilterProxy::LogFilterProxy(QObject* parent)
 {
     setFilterCaseSensitivity(Qt::CaseInsensitive);
     setSortCaseSensitivity(Qt::CaseInsensitive);
-    setDynamicSortFilter(true);
+    setDynamicSortFilter(false);
+    sort(LogModel::ColTimestamp, Qt::AscendingOrder);
 }
 
 void LogFilterProxy::setSearchText(const QString& text)

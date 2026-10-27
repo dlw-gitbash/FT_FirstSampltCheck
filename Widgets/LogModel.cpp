@@ -3,12 +3,17 @@
 #include <QBrush>
 #include <QFont>
 
+static QString formatTimestamp(qint64 ms)
+{
+    return QDateTime::fromMSecsSinceEpoch(ms).toString(QStringLiteral("yyyy-MM-dd HH:mm:ss.zzz"));
+}
+
 LogModel::LogModel(int maxEntries, QObject* parent)
     : QAbstractTableModel(parent)
     , m_offset(0)
     , m_maxEntries(qMax(1000, maxEntries))
     , m_totalCount(0)
-    , m_batchInterval(50)
+    , m_batchInterval(100)
     , m_flushScheduled(false)
 {
     connect(&m_flushTimer, &QTimer::timeout, this, &LogModel::flushPending);
@@ -44,10 +49,8 @@ QVariant LogModel::data(const QModelIndex& index, int role) const
 
     if (role == Qt::DisplayRole) {
         switch (col) {
-        case ColTimestamp: {
-            QDateTime dt = QDateTime::fromMSecsSinceEpoch(entry.timestamp);
-            return dt.toString("yyyy-MM-dd HH:mm:ss.zzz");
-        }
+        case ColTimestamp:
+            return entry.formattedTime;
         case ColLevel:
             return QString::fromLatin1(LogLevelHelper::levelName(entry.level));
         case ColMessage:
@@ -104,6 +107,7 @@ QVariant LogModel::headerData(int section, Qt::Orientation orientation, int role
 void LogModel::addEntry(LogEntry entry)
 {
     entry.index = m_totalCount.fetch_add(1, std::memory_order_acq_rel);
+    entry.formattedTime = formatTimestamp(entry.timestamp);
 
     {
         QMutexLocker locker(&m_pendingMutex);
@@ -114,7 +118,6 @@ void LogModel::addEntry(LogEntry entry)
         flushPending();
     } else if (!m_flushScheduled) {
         m_flushScheduled = true;
-        // 使用单次定时器，避免频繁触发
         QMetaObject::invokeMethod(this, [this]() {
             m_flushTimer.start(m_batchInterval);
         }, Qt::QueuedConnection);
@@ -129,6 +132,7 @@ void LogModel::addEntries(std::vector<LogEntry>& entries)
                                                 std::memory_order_acq_rel);
     for (size_t i = 0; i < entries.size(); ++i) {
         entries[i].index = baseIndex + static_cast<quint32>(i);
+        entries[i].formattedTime = formatTimestamp(entries[i].timestamp);
     }
 
     {
@@ -143,7 +147,7 @@ void LogModel::addEntries(std::vector<LogEntry>& entries)
     } else if (!m_flushScheduled) {
         m_flushScheduled = true;
         QMetaObject::invokeMethod(this, [this]() {
-            m_flushTimer.start(0);
+            m_flushTimer.start(m_batchInterval);
         }, Qt::QueuedConnection);
     }
 }

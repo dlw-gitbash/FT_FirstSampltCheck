@@ -37,7 +37,7 @@ void LogTableView::setupUI()
     layout->addWidget(m_toolBar);
 
     // --- Model ---
-    m_model = new LogModel(1000000, this);
+    m_model = new LogModel(200000, this);
 
     // --- Filter Proxy ---
     m_proxy = new LogFilterProxy(this);

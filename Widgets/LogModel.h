@@ -28,7 +28,7 @@ public:
         ColumnCount   = 3
     };
 
-    explicit LogModel(int maxEntries = 1000000, QObject* parent = nullptr);
+    explicit LogModel(int maxEntries = 200000, QObject* parent = nullptr);
     ~LogModel() override;
 
     // --- QAbstractTableModel 接口 ---

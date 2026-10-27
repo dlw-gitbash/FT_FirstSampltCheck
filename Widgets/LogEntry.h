@@ -19,13 +19,14 @@ enum class LogLevel : quint8 {
 };
 
 struct LogEntry {
-    qint64     timestamp;   // ms since epoch，使用 qint64 避免 QDateTime 频繁构造
+    qint64     timestamp;     // ms since epoch
     LogLevel   level;
-    QString    logger;      // 日志来源模块/类名
-    QString    message;     // 日志正文
-    QString    threadName;  // 线程名
-    int        lineNumber;  // 行号（-1 表示无）
-    quint32    index;       // 全局递增序号
+    QString    logger;        // 日志来源模块/类名
+    QString    message;       // 日志正文
+    QString    threadName;    // 线程名
+    int        lineNumber;    // 行号（-1 表示无）
+    quint32    index;         // 全局递增序号
+    QString    formattedTime; // 缓存的时间戳字符串，避免 data() 中反复转换
 
     LogEntry()
         : timestamp(0)

@@ -1,0 +1,6 @@
+<RCC>
+    <qresource prefix="/">
+        <file>widgetsres/clear.png</file>
+        <file>widgetsres/tobottom.png</file>
+    </qresource>
+</RCC>
