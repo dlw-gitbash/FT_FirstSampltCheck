@@ -1,95 +1,41 @@
 #pragma once
 
-#include <QColor>
-#include <QDateTime>
-#include <QFont>
 #include <QString>
 #include <QStringView>
 #include <QtGlobal>
 
-#include <array>
-#include <utility>
-
-enum class Level : quint8 {
-    Trace = 0,
-    Debug,
-    Info,
-    Warning,
-    Error,
-    Fatal,
+enum TB_CM_Level : int {
+    L_TRACE = 0,
+    L_DEBUG,
+    L_INFO,
+    L_WARN,
+    L_ERROR,
+    L_FATAL,
 };
 
-inline constexpr int LevelCount = 6;
+inline constexpr int TB_CM_LevelCount = L_FATAL + 1;
 
-inline QStringView levelName(Level level) noexcept
+inline QStringView levelName(int level) noexcept
 {
     switch (level) {
-    case Level::Trace:
+    case L_TRACE:
         return u"TRACE";
-    case Level::Debug:
+    case L_DEBUG:
         return u"DEBUG";
-    case Level::Info:
-        return u"INFO";
-    case Level::Warning:
+    case L_WARN:
         return u"WARN";
-    case Level::Error:
+    case L_ERROR:
         return u"ERROR";
-    case Level::Fatal:
+    case L_FATAL:
         return u"FATAL";
+    default:
+        return u"INFO";
     }
-    return u"LOG";
 }
 
-enum class MatchMode : quint8 {
-    Substring,
-    Regex,
-};
-
-struct Filter {
-    QString text;
-    MatchMode mode = MatchMode::Substring;
-    bool caseSensitive = false;
-    bool searchCategory = true;
-};
-
-struct Record {
-    Level level = Level::Info;
-    qint64 timestampMs = 0;
-    qint64 sequence = 0;
-    QString category;
+struct TB_CM_LogEntry {
     QString message;
-    mutable QString cachedTime;
-    mutable int cachedTextWidth = -1;
-    mutable int cachedHeight = -1;
-};
-
-inline Record makeRecord(Level level, QString category, QString message, qint64 timestampMs = 0)
-{
-    Record record;
-    record.level = level;
-    record.timestampMs = timestampMs > 0 ? timestampMs : QDateTime::currentMSecsSinceEpoch();
-    record.category = std::move(category);
-    record.message = std::move(message);
-    return record;
-}
-
-struct Theme {
-    QColor background;
-    QColor alternateBackground;
-    QColor text;
-    QColor textMuted;
-    QColor category;
-    QColor separator;
-    QColor selection;
-    QColor hover;
-    QColor matchBackground;
-    QColor matchText;
-    QColor scrollBar;
-    QColor scrollBarHover;
-    QColor inputBackground;
-    QColor checkedBackground;
-    std::array<QColor, LevelCount> levelColors;
-    QFont font;
-    static Theme dark();
-    static Theme light();
+    QString category;
+    quint64 timestampMs = 0;
+    int level = L_INFO;
 };

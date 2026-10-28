@@ -1,4 +1,4 @@
-#include <TB_CM_Types.h>
+#include <TB_CM_Theme.h>
 
 #include <QFontDatabase>
 
@@ -14,9 +14,9 @@ QFont monospaceFont()
 
 } // namespace
 
-Theme Theme::dark()
+TB_CM_Theme TB_CM_Theme::dark()
 {
-    Theme theme;
+    TB_CM_Theme theme;
     theme.background = QColor(0x1e, 0x1f, 0x22);
     theme.alternateBackground = QColor(0x22, 0x23, 0x27);
     theme.text = QColor(0xd6, 0xd8, 0xdc);
@@ -38,34 +38,6 @@ Theme Theme::dark()
         QColor(0xd2, 0x99, 0x22),
         QColor(0xf8, 0x51, 0x49),
         QColor(0xdb, 0x61, 0xa2),
-    };
-    theme.font = monospaceFont();
-    return theme;
-}
-Theme Theme::light()
-{
-    Theme theme;
-    theme.background = QColor(0xff, 0xff, 0xff);
-    theme.alternateBackground = QColor(0xf5, 0xf6, 0xf8);
-    theme.text = QColor(0x1f, 0x23, 0x28);
-    theme.textMuted = QColor(0x6e, 0x77, 0x81);
-    theme.category = QColor(0x0b, 0x5f, 0xa8);
-    theme.separator = QColor(0xda, 0xdc, 0xe1);
-    theme.selection = QColor(0xcf, 0xe8, 0xff);
-    theme.hover = QColor(0xef, 0xf2, 0xf6);
-    theme.matchBackground = QColor(0xff, 0xe0, 0x6a);
-    theme.matchText = QColor(0x1f, 0x23, 0x28);
-    theme.scrollBar = QColor(0xc4, 0xc8, 0xce);
-    theme.scrollBarHover = QColor(0xa8, 0xae, 0xb6);
-    theme.inputBackground = QColor(0xfa, 0xfb, 0xfc);
-    theme.checkedBackground = QColor(0xe3, 0xe7, 0xec);
-    theme.levelColors = {
-        QColor(0x6e, 0x77, 0x81),
-        QColor(0x09, 0x6c, 0xd4),
-        QColor(0x1a, 0x7f, 0x37),
-        QColor(0x9a, 0x67, 0x00),
-        QColor(0xcf, 0x22, 0x2e),
-        QColor(0xa4, 0x1a, 0x6d),
     };
     theme.font = monospaceFont();
     return theme;

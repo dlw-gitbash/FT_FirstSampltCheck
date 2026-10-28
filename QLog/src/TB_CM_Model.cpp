@@ -8,13 +8,13 @@ TB_CM_Model::TB_CM_Model(QObject* parent)
     : QAbstractListModel(parent)
 {
 }
-void TB_CM_Model::appendBatch(std::vector<Record>&& records)
+void TB_CM_Model::appendBatch(std::vector<TB_CM_LogEntry>&& entries)
 {
-    if (records.empty()) {
+    if (entries.empty()) {
         return;
     }
     const qint64 oldEnd = document_.nextSeq();
-    document_.appendBatch(std::move(records));
+    document_.appendBatch(std::move(entries));
     const qint64 newFirst = document_.firstSeq();
     const qint64 end = document_.nextSeq();
     if (end <= newFirst || end <= oldEnd) {
@@ -54,27 +54,19 @@ void TB_CM_Model::clear()
     endResetModel();
     emit countsChanged(0, 0);
 }
-void TB_CM_Model::setCapacity(int capacity)
-{
-    const int previous = document_.capacity();
-    document_.setCapacity(capacity);
-    if (document_.capacity() != previous) {
-        rebuildVisible();
-    }
-}
-void TB_CM_Model::setFilter(const Filter& filter)
+void TB_CM_Model::setFilter(const TB_CM_Filter& filter)
 {
     filter_ = filter;
     compileFilter();
     emit filterChanged();
     rebuildVisible();
 }
-bool TB_CM_Model::matches(const Record& record) const
+bool TB_CM_Model::matches(const TB_CM_Record& record) const
 {
     if (filter_.text.isEmpty()) {
         return true;
     }
-    if (filter_.mode == MatchMode::Regex && regexValid_) {
+    if (filter_.mode == TB_CM_MatchMode::Regex && regexValid_) {
         if (regex_.match(record.message).hasMatch()) {
             return true;
         }
@@ -90,7 +82,7 @@ bool TB_CM_Model::matches(const Record& record) const
 void TB_CM_Model::compileFilter()
 {
     regexValid_ = true;
-    if (filter_.text.isEmpty() || filter_.mode != MatchMode::Regex) {
+    if (filter_.text.isEmpty() || filter_.mode != TB_CM_MatchMode::Regex) {
         return;
     }
     regex_.setPatternOptions(filter_.caseSensitive ? QRegularExpression::NoPatternOption
@@ -115,12 +107,12 @@ void TB_CM_Model::rebuildVisible()
 void TB_CM_Model::invalidateLayoutCache()
 {
     for (qint64 seq = document_.firstSeq(); seq < document_.nextSeq(); ++seq) {
-        Record& record = document_.at(seq);
-        record.cachedTextWidth = -1;
+        TB_CM_Record& record = document_.at(seq);
+        record.cachedWidth = -1;
         record.cachedHeight = -1;
     }
 }
-const Record* TB_CM_Model::recordAt(int row) const
+const TB_CM_Record* TB_CM_Model::recordAt(int row) const
 {
     if (row < 0 || row >= int(visible_.size())) {
         return nullptr;
@@ -133,7 +125,7 @@ int TB_CM_Model::rowCount(const QModelIndex& parent) const
 }
 QVariant TB_CM_Model::data(const QModelIndex& index, int role) const
 {
-    const Record* record = recordAt(index.row());
+    const TB_CM_Record* record = recordAt(index.row());
     if (record == nullptr) {
         return {};
     }
@@ -142,13 +134,13 @@ QVariant TB_CM_Model::data(const QModelIndex& index, int role) const
     case MessageRole:
         return record->message;
     case LevelRole:
-        return int(record->level);
+        return record->level;
     case CategoryRole:
         return record->category;
     case TimestampRole:
-        return record->timestampMs;
+        return qint64(record->timestampMs);
     case Qt::ToolTipRole: {
-        const QString time = QDateTime::fromMSecsSinceEpoch(record->timestampMs)
+        const QString time = QDateTime::fromMSecsSinceEpoch(qint64(record->timestampMs))
                                  .toString(QStringLiteral("yyyy-MM-dd HH:mm:ss.zzz"));
         QString tip = QStringLiteral("%1  [%2]").arg(time, levelName(record->level).toString());
         if (!record->category.isEmpty()) {

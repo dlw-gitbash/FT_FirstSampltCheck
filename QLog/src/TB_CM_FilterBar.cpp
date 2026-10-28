@@ -77,45 +77,19 @@ TB_CM_FilterBar::TB_CM_FilterBar(QWidget* parent)
     connect(clearButton_, &QToolButton::clicked, this, &TB_CM_FilterBar::clearRequested);
     updateStyles();
 }
-Filter TB_CM_FilterBar::filter() const
+TB_CM_Filter TB_CM_FilterBar::filter() const
 {
-    Filter filter;
+    TB_CM_Filter filter;
     filter.text = search_->text();
-    filter.mode = regexButton_->isChecked() ? MatchMode::Regex : MatchMode::Substring;
+    filter.mode = regexButton_->isChecked() ? TB_CM_MatchMode::Regex : TB_CM_MatchMode::Substring;
     filter.caseSensitive = caseButton_->isChecked();
     filter.searchCategory = true;
     return filter;
-}
-void TB_CM_FilterBar::setFilterText(const QString& text)
-{
-    if (search_->text() == text) {
-        return;
-    }
-    const QSignalBlocker blocker(search_);
-    search_->setText(text);
-    emit filterChanged();
-}
-QString TB_CM_FilterBar::filterText() const
-{
-    return search_->text();
-}
-void TB_CM_FilterBar::setWrapEnabled(bool enabled)
-{
-    const QSignalBlocker blocker(this);
-    wrapButton_->setChecked(enabled);
-}
-bool TB_CM_FilterBar::isWrapEnabled() const
-{
-    return wrapButton_->isChecked();
 }
 void TB_CM_FilterBar::setFollowTail(bool enabled)
 {
     const QSignalBlocker blocker(this);
     followButton_->setChecked(enabled);
-}
-bool TB_CM_FilterBar::isFollowTail() const
-{
-    return followButton_->isChecked();
 }
 void TB_CM_FilterBar::setCounts(int visible, int total)
 {
@@ -123,7 +97,7 @@ void TB_CM_FilterBar::setCounts(int visible, int total)
     counter_->setText(QStringLiteral("%1 / %2")
                           .arg(locale.toString(visible), locale.toString(total)));
 }
-void TB_CM_FilterBar::setTheme(const Theme& theme)
+void TB_CM_FilterBar::setTheme(const TB_CM_Theme& theme)
 {
     theme_ = theme;
     updateStyles();
@@ -143,7 +117,7 @@ void TB_CM_FilterBar::onFilterOptionToggled()
 }
 void TB_CM_FilterBar::updateStyles()
 {
-    const Theme& theme = theme_;
+    const TB_CM_Theme& theme = theme_;
     QString sheet = QStringLiteral(
         "#TB_CM_FilterBar { background: @bg; border-bottom: 1px solid @sep; }"
         "QLineEdit#search { background: @input; color: @text; border: 1px solid @sep;"
@@ -167,6 +141,6 @@ void TB_CM_FilterBar::updateStyles()
     sheet.replace(QLatin1String("@cat"), theme.category.name());
     sheet.replace(QLatin1String("@hover"), theme.hover.name());
     sheet.replace(QLatin1String("@checked"), theme.checkedBackground.name());
-    sheet.replace(QLatin1String("@error"), theme.levelColors[size_t(Level::Error)].name());
+    sheet.replace(QLatin1String("@error"), theme.levelColors[size_t(L_ERROR)].name());
     setStyleSheet(sheet);
 }

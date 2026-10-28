@@ -1,12 +1,23 @@
 #pragma once
 
 #include <TB_CM_Document.h>
-#include <TB_CM_Types.h>
 
 #include <QAbstractListModel>
 #include <QRegularExpression>
 
 #include <vector>
+
+enum class TB_CM_MatchMode : quint8 {
+    Substring,
+    Regex,
+};
+
+struct TB_CM_Filter {
+    QString text;
+    TB_CM_MatchMode mode = TB_CM_MatchMode::Substring;
+    bool caseSensitive = false;
+    bool searchCategory = true;
+};
 
 class TB_CM_Model final : public QAbstractListModel
 {
@@ -22,21 +33,17 @@ public:
 
     explicit TB_CM_Model(QObject* parent = nullptr);
 
-    void appendBatch(std::vector<Record>&& records);
+    void appendBatch(std::vector<TB_CM_LogEntry>&& entries);
     void clear();
-    void setCapacity(int capacity);
-
-    void setFilter(const Filter& filter);
+    void setFilter(const TB_CM_Filter& filter);
     void invalidateLayoutCache();
 
     int capacity() const { return document_.capacity(); }
     int totalCount() const { return document_.size(); }
     int visibleCount() const { return int(visible_.size()); }
-    const Filter& filter() const { return filter_; }
-    bool filterIsValid() const { return regexValid_; }
+    const TB_CM_Filter& filter() const { return filter_; }
 
-    const Record* recordAt(int row) const;
-    const TB_CM_Document& document() const { return document_; }
+    const TB_CM_Record* recordAt(int row) const;
 
     int rowCount(const QModelIndex& parent = QModelIndex()) const override;
     QVariant data(const QModelIndex& index, int role = Qt::DisplayRole) const override;
@@ -48,14 +55,14 @@ signals:
     void filterChanged();
 
 private:
-    bool matches(const Record& record) const;
+    bool matches(const TB_CM_Record& record) const;
     void rebuildVisible();
     void compileFilter();
 
 private:
     TB_CM_Document document_;
     std::vector<qint64> visible_;
-    Filter filter_;
+    TB_CM_Filter filter_;
     QRegularExpression regex_;
     bool regexValid_ = true;
 };

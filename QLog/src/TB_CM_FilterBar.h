@@ -1,6 +1,7 @@
 #pragma once
 
-#include <TB_CM_Types.h>
+#include <TB_CM_Model.h>
+#include <TB_CM_Theme.h>
 
 #include <QWidget>
 
@@ -16,17 +17,11 @@ class TB_CM_FilterBar final : public QWidget
 public:
     explicit TB_CM_FilterBar(QWidget* parent = nullptr);
 
-    void setTheme(const Theme& theme);
-    void setFilterText(const QString& text);
-    void setWrapEnabled(bool enabled);
+    void setTheme(const TB_CM_Theme& theme);
     void setFollowTail(bool enabled);
     void setCounts(int visible, int total);
 
-    Filter filter() const;
-    const Theme& theme() const { return theme_; }
-    QString filterText() const;
-    bool isWrapEnabled() const;
-    bool isFollowTail() const;
+    TB_CM_Filter filter() const;
 
 signals:
     void filterChanged();
@@ -41,7 +36,7 @@ private:
     void updateStyles();
 
 private:
-    Theme theme_ = Theme::dark();
+    TB_CM_Theme theme_ = TB_CM_Theme::dark();
     QLineEdit* search_ = nullptr;
     QToolButton* regexButton_ = nullptr;
     QToolButton* caseButton_ = nullptr;

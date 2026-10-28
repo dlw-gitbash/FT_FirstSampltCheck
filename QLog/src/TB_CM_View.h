@@ -1,9 +1,10 @@
 #pragma once
 
-#include <TB_CM_Types.h>
+#include <TB_CM_Theme.h>
 
 #include <QListView>
 
+struct TB_CM_Record;
 class TB_CM_Model;
 class TB_CM_Delegate;
 
@@ -15,15 +16,10 @@ public:
     explicit TB_CM_View(QWidget* parent = nullptr);
 
     void setModel(QAbstractItemModel* model) override;
-    void setTheme(const Theme& theme);
+    void setTheme(const TB_CM_Theme& theme);
     void setWrapEnabled(bool enabled);
     void setFollowTail(bool enabled);
-    void copySelectionToClipboard();
-    void copyAllToClipboard();
 
-    TB_CM_Model* logModel() const { return model_; }
-    TB_CM_Delegate* logDelegate() const { return delegate_; }
-    const Theme& theme() const { return theme_; }
     bool isWrapEnabled() const { return wrapEnabled_; }
     bool isFollowTail() const { return followTail_; }
 
@@ -43,12 +39,14 @@ private:
     void onFilterChanged();
     void onScrollBarRangeChanged(int minimum, int maximum);
     void onScrollBarValueChanged(int value);
-    QString lineFor(const Record& record) const;
+    void copySelectionToClipboard();
+    void copyAllToClipboard();
+    QString lineFor(const TB_CM_Record& record) const;
 
 private:
     TB_CM_Model* model_ = nullptr;
     TB_CM_Delegate* delegate_ = nullptr;
-    Theme theme_ = Theme::dark();
+    TB_CM_Theme theme_ = TB_CM_Theme::dark();
     bool wrapEnabled_ = true;
     bool followTail_ = true;
     bool applyingFollow_ = false;

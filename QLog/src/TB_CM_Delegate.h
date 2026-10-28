@@ -1,13 +1,12 @@
 #pragma once
 
-#include <TB_CM_Types.h>
+#include <TB_CM_Model.h>
+#include <TB_CM_Theme.h>
 
 #include <QAbstractItemDelegate>
 #include <QFontMetrics>
 #include <QRegularExpression>
 #include <QTextLayout>
-
-class TB_CM_Model;
 
 class TB_CM_Delegate final : public QAbstractItemDelegate
 {
@@ -17,13 +16,11 @@ public:
     explicit TB_CM_Delegate(QObject* parent = nullptr);
 
     void setLogModel(const TB_CM_Model* model);
-    void setTheme(const Theme& theme);
+    void setTheme(const TB_CM_Theme& theme);
     void setWrapEnabled(bool enabled);
-    void setFilter(const Filter& filter);
+    void setFilter(const TB_CM_Filter& filter);
+    void setFallbackWidth(int width);
 
-    const Theme& theme() const { return theme_; }
-    bool isWrapEnabled() const { return wrapEnabled_; }
-    void setFallbackWidth(int width) { fallbackWidth_ = width; }
     int fallbackWidth() const { return fallbackWidth_; }
 
     void paint(QPainter* painter, const QStyleOptionViewItem& option,
@@ -32,16 +29,17 @@ public:
 
 private:
     void updateMetrics();
-    QString buildContent(const Record& record) const;
-    int measure(const Record& record, const QString& content, int textWidth) const;
+    QString buildContent(const TB_CM_Record& record) const;
+    int measure(const TB_CM_Record& record, int textWidth) const;
     int lineCount(const QString& text, int textWidth) const;
     int paragraphLines(const QString& paragraph, int textWidth) const;
-    QList<QTextLayout::FormatRange> buildFormats(const Record& record, const QString& content) const;
-    const QString& timeText(const Record& record) const;
+    QList<QTextLayout::FormatRange> buildFormats(const TB_CM_Record& record,
+                                                 const QString& content) const;
+    const QString& timeText(const TB_CM_Record& record) const;
 
 private:
     const TB_CM_Model* model_ = nullptr;
-    Theme theme_;
+    TB_CM_Theme theme_;
     QFontMetrics metrics_;
     int lineHeight_ = 1;
     int timeWidth_ = 0;
@@ -51,7 +49,7 @@ private:
     int fallbackWidth_ = 0;
     bool wrapEnabled_ = true;
     QString matchText_;
-    MatchMode matchMode_ = MatchMode::Substring;
+    TB_CM_MatchMode matchMode_ = TB_CM_MatchMode::Substring;
     bool matchCaseSensitive_ = false;
     QRegularExpression matchRegex_;
     bool matchRegexValid_ = false;

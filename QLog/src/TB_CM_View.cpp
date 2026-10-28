@@ -54,8 +54,10 @@ TB_CM_View::TB_CM_View(QWidget* parent)
     setFocusPolicy(Qt::StrongFocus);
     setAutoScroll(true);
     viewport()->setAutoFillBackground(true);
-    connect(verticalScrollBar(), &QScrollBar::rangeChanged, this, &TB_CM_View::onScrollBarRangeChanged);
-    connect(verticalScrollBar(), &QScrollBar::valueChanged, this, &TB_CM_View::onScrollBarValueChanged);
+    connect(verticalScrollBar(), &QScrollBar::rangeChanged, this,
+            &TB_CM_View::onScrollBarRangeChanged);
+    connect(verticalScrollBar(), &QScrollBar::valueChanged, this,
+            &TB_CM_View::onScrollBarValueChanged);
     setTheme(theme_);
 }
 void TB_CM_View::setModel(QAbstractItemModel* model)
@@ -74,7 +76,7 @@ void TB_CM_View::setModel(QAbstractItemModel* model)
         delegate_->setFilter(model_->filter());
     }
 }
-void TB_CM_View::setTheme(const Theme& theme)
+void TB_CM_View::setTheme(const TB_CM_Theme& theme)
 {
     theme_ = theme;
     setFont(theme.font);
@@ -225,9 +227,9 @@ void TB_CM_View::contextMenuEvent(QContextMenuEvent* event)
     connect(clear, &QAction::triggered, this, &TB_CM_View::clearRequested);
     menu.exec(event->globalPos());
 }
-QString TB_CM_View::lineFor(const Record& record) const
+QString TB_CM_View::lineFor(const TB_CM_Record& record) const
 {
-    QString line = QDateTime::fromMSecsSinceEpoch(record.timestampMs)
+    QString line = QDateTime::fromMSecsSinceEpoch(qint64(record.timestampMs))
                        .toString(QStringLiteral("yyyy-MM-dd HH:mm:ss.zzz"));
     line += QStringLiteral(" [%1]").arg(levelName(record.level).toString());
     if (!record.category.isEmpty()) {
@@ -248,7 +250,7 @@ void TB_CM_View::copySelectionToClipboard()
     QStringList lines;
     lines.reserve(rows.size());
     for (const QModelIndex& index : rows) {
-        const Record* record = model_->recordAt(index.row());
+        const TB_CM_Record* record = model_->recordAt(index.row());
         if (record != nullptr) {
             lines.append(lineFor(*record));
         }
@@ -265,7 +267,7 @@ void TB_CM_View::copyAllToClipboard()
     QStringList lines;
     lines.reserve(model_->visibleCount());
     for (int row = 0; row < model_->visibleCount(); ++row) {
-        const Record* record = model_->recordAt(row);
+        const TB_CM_Record* record = model_->recordAt(row);
         if (record != nullptr) {
             lines.append(lineFor(*record));
         }

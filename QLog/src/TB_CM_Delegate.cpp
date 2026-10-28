@@ -1,7 +1,5 @@
 #include <TB_CM_Delegate.h>
 
-#include <TB_CM_Model.h>
-
 #include <QDateTime>
 #include <QPainter>
 #include <QTextLayout>
@@ -43,7 +41,7 @@ QList<QTextLayout::FormatRange> sliceFormats(const QList<QTextLayout::FormatRang
 
 TB_CM_Delegate::TB_CM_Delegate(QObject* parent)
     : QAbstractItemDelegate(parent)
-    , theme_(Theme::dark())
+    , theme_(TB_CM_Theme::dark())
     , metrics_(theme_.font)
 {
     updateMetrics();
@@ -52,7 +50,7 @@ void TB_CM_Delegate::setLogModel(const TB_CM_Model* model)
 {
     model_ = model;
 }
-void TB_CM_Delegate::setTheme(const Theme& theme)
+void TB_CM_Delegate::setTheme(const TB_CM_Theme& theme)
 {
     theme_ = theme;
     updateMetrics();
@@ -61,19 +59,23 @@ void TB_CM_Delegate::setWrapEnabled(bool enabled)
 {
     wrapEnabled_ = enabled;
 }
-void TB_CM_Delegate::setFilter(const Filter& filter)
+void TB_CM_Delegate::setFilter(const TB_CM_Filter& filter)
 {
     matchText_ = filter.text;
     matchMode_ = filter.mode;
     matchCaseSensitive_ = filter.caseSensitive;
     matchRegexValid_ = false;
-    if (matchMode_ == MatchMode::Regex && !matchText_.isEmpty()) {
+    if (matchMode_ == TB_CM_MatchMode::Regex && !matchText_.isEmpty()) {
         matchRegex_.setPatternOptions(matchCaseSensitive_
                                           ? QRegularExpression::NoPatternOption
                                           : QRegularExpression::CaseInsensitiveOption);
         matchRegex_.setPattern(matchText_);
         matchRegexValid_ = matchRegex_.isValid();
     }
+}
+void TB_CM_Delegate::setFallbackWidth(int width)
+{
+    fallbackWidth_ = width;
 }
 void TB_CM_Delegate::updateMetrics()
 {
@@ -84,7 +86,7 @@ void TB_CM_Delegate::updateMetrics()
     gutterWidth_ = AccentWidth + LeftPad + timeWidth_ + ColumnGap + levelWidth_ + ColumnGap;
     maxCharWidth_ = std::max(metrics_.horizontalAdvance(u'W'), metrics_.horizontalAdvance(u'M'));
 }
-QString TB_CM_Delegate::buildContent(const Record& record) const
+QString TB_CM_Delegate::buildContent(const TB_CM_Record& record) const
 {
     if (record.category.isEmpty()) {
         return record.message;
@@ -96,24 +98,24 @@ QString TB_CM_Delegate::buildContent(const Record& record) const
     content += record.message;
     return content;
 }
-const QString& TB_CM_Delegate::timeText(const Record& record) const
+const QString& TB_CM_Delegate::timeText(const TB_CM_Record& record) const
 {
-    if (record.cachedTime.isEmpty()) {
-        record.cachedTime = QDateTime::fromMSecsSinceEpoch(record.timestampMs)
-                                .toString(QStringLiteral("HH:mm:ss.zzz"));
+    if (record.timeText.isEmpty()) {
+        record.timeText = QDateTime::fromMSecsSinceEpoch(qint64(record.timestampMs))
+                              .toString(QStringLiteral("HH:mm:ss.zzz"));
     }
-    return record.cachedTime;
+    return record.timeText;
 }
-int TB_CM_Delegate::measure(const Record& record, const QString& content, int textWidth) const
+int TB_CM_Delegate::measure(const TB_CM_Record& record, int textWidth) const
 {
     if (textWidth <= 0) {
         return lineHeight_ + 2 * VerticalPad;
     }
-    if (record.cachedTextWidth == textWidth && record.cachedHeight > 0) {
+    if (record.cachedWidth == textWidth && record.cachedHeight > 0) {
         return record.cachedHeight;
     }
-    const int height = lineCount(content, textWidth) * lineHeight_ + 2 * VerticalPad;
-    record.cachedTextWidth = textWidth;
+    const int height = lineCount(buildContent(record), textWidth) * lineHeight_ + 2 * VerticalPad;
+    record.cachedWidth = textWidth;
     record.cachedHeight = height;
     return height;
 }
@@ -181,7 +183,7 @@ int TB_CM_Delegate::lineCount(const QString& text, int textWidth) const
     }
     return std::max(1, std::min(lines, MaxLines));
 }
-QList<QTextLayout::FormatRange> TB_CM_Delegate::buildFormats(const Record& record,
+QList<QTextLayout::FormatRange> TB_CM_Delegate::buildFormats(const TB_CM_Record& record,
                                                             const QString& content) const
 {
     const int length = int(content.size());
@@ -200,7 +202,7 @@ QList<QTextLayout::FormatRange> TB_CM_Delegate::buildFormats(const Record& recor
                 styles[size_t(i)] = 2;
             }
         };
-        if (matchMode_ == MatchMode::Regex && matchRegexValid_) {
+        if (matchMode_ == TB_CM_MatchMode::Regex && matchRegexValid_) {
             QRegularExpressionMatchIterator it = matchRegex_.globalMatch(content);
             int guard = 0;
             while (it.hasNext() && guard++ < MaxLines) {
@@ -259,12 +261,12 @@ QSize TB_CM_Delegate::sizeHint(const QStyleOptionViewItem& option, const QModelI
     if (model_ == nullptr || width <= 0) {
         return QSize(width, minimum);
     }
-    const Record* record = model_->recordAt(index.row());
+    const TB_CM_Record* record = model_->recordAt(index.row());
     if (record == nullptr) {
         return QSize(width, minimum);
     }
     const int textWidth = std::max(1, width - gutterWidth_ - RightPad);
-    return QSize(width, measure(*record, buildContent(*record), textWidth));
+    return QSize(width, measure(*record, textWidth));
 }
 void TB_CM_Delegate::paint(QPainter* painter, const QStyleOptionViewItem& option,
                            const QModelIndex& index) const
@@ -272,7 +274,7 @@ void TB_CM_Delegate::paint(QPainter* painter, const QStyleOptionViewItem& option
     if (model_ == nullptr) {
         return;
     }
-    const Record* record = model_->recordAt(index.row());
+    const TB_CM_Record* record = model_->recordAt(index.row());
     if (record == nullptr) {
         return;
     }
@@ -291,7 +293,8 @@ void TB_CM_Delegate::paint(QPainter* painter, const QStyleOptionViewItem& option
     } else if (hovered) {
         painter->fillRect(rect, theme_.hover);
     }
-    const QColor levelColor = theme_.levelColors[size_t(record->level)];
+    const int level = std::clamp(record->level, int(L_TRACE), int(L_FATAL));
+    const QColor levelColor = theme_.levelColors[size_t(level)];
     painter->fillRect(QRect(rect.left(), rect.top(), AccentWidth, rect.height()), levelColor);
     painter->setFont(theme_.font);
     const int firstLineTop = rect.top() + VerticalPad;
@@ -304,7 +307,7 @@ void TB_CM_Delegate::paint(QPainter* painter, const QStyleOptionViewItem& option
     painter->setFont(levelFont);
     painter->setPen(levelColor);
     painter->drawText(QRect(timeLeft + timeWidth_ + ColumnGap, firstLineTop, levelWidth_, lineHeight_),
-                      Qt::AlignLeft | Qt::AlignVCenter, levelName(record->level).toString());
+                      Qt::AlignLeft | Qt::AlignVCenter, levelName(level).toString());
     painter->setFont(theme_.font);
     const QString content = buildContent(*record);
     const int textWidth = std::max(1, rect.width() - gutterWidth_ - RightPad);
